@@ -1,0 +1,10 @@
+
+ Start  Stop   Length Name               Class
+
+ 00000H 02671H 02672H _TEXT              CODE
+ 02680H 0AB8BH 0850CH _DATA              DATA
+ 0AB90H 0AC8FH 00100H STACK              STACK
+ 0AC90H 1A68FH 0FA00H SECONDBUFFERSEG    
+
+Program entry point at 0000:0000
+
