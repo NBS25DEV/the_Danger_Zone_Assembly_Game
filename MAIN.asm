@@ -5747,7 +5747,7 @@ proc AnyKeyPressedCheck
 	mov si, offset keys 
 	
 @@checkAnyKey:
-	cmp [si], 1
+	cmp [byte ptr si], 1
 	je @@pressed
 	inc si 
 	loop @@checkAnyKey
