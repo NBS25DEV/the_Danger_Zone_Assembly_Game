@@ -41,6 +41,7 @@ p386
 ; -------------------------------------------------------------------------
 
 
+
 ; -------------------------------------------------------------------------
 ; EXTRA SEGMENT DEFINITION
 ; -------------------------------------------------------------------------
@@ -62,9 +63,10 @@ ENDS secondBufferSeg
 ; -------------------------------------------------------------------------
 
 DATASEG
+	warningBeepSound dw 2000
 
 	moveLeftCnt dw 0
-
+	musicOn db 1
 ; -------------------------------------------------------------------------
 ; AUDIO AND SOUND CONTROLS
 ; -------------------------------------------------------------------------
@@ -83,7 +85,7 @@ DATASEG
 ; END
 ; -------------------------------------------------------------------------
 
-
+	lastIter db 0
 ; -------------------------------------------------------------------------
 ; ENEMY STATE, MOVMENT, AND TRACKING
 ; -------------------------------------------------------------------------
@@ -132,7 +134,7 @@ DATASEG
 ; -------------------------------------------------------------------------
 ; END
 ; -------------------------------------------------------------------------
-
+tempStr db 3 dup (?)
 ; -------------------------------------------------------------------------
 ; MISSILE SPRITES 
 ; -------------------------------------------------------------------------
@@ -1964,6 +1966,8 @@ DATASEG
 ; or open a requested BMP asset. '0dh, 0ah' represent a new line, 
 ; and '$' is the required terminator for DOS string output (INT 21h, AH=09h).
 	BmpFileErrorMsg    db "Error At Opening Bmp File ", 0dh, 0ah,'$'
+	
+	shouldCheckSkip db 1
 
 ; FileError and FileFound: Status flags used by the file loading logic.
 ; 0 serves as the initial state; these are updated to 1 depending on 
@@ -4569,6 +4573,18 @@ Enemy3NormalFixed dw 16,  5, 152
 				dw 0, 0, 0
 		
 	
+	; RUNWAY CUTSCENE:
+	PlaneRunwayL   db 'P_L.bmp',  0
+	PlaneRunwayM   db 'P_M.bmp',  0
+	PlaneRunwayS   db 'P_S.bmp',  0
+	PlaneRunwayXS  db 'P_XS.bmp', 0
+
+	; Animation state (reset each call)
+	RunwayPlaneY   dw 0     ; current screen Y of the plane
+	RunwayPlaneX   dw 0     ; current screen X of the plane
+	RunwayStage    db 0     ; 0=L, 1=M, 2=S, 3=XS, 4=done
+	RunwayFrameCnt db 0     ; frames elapsed in current stage	
+	runwayAdvancePerTick db 0
 ; -------------------------------------------------------------------------
 ; BRESENHAM VARIABLES
 ; -------------------------------------------------------------------------
@@ -4599,7 +4615,7 @@ Enemy3NormalFixed dw 16,  5, 152
 	
 	
 	planeSpeed dw 2
-	altitude dw 50
+	altitude dw 2700
 	
 	WaitForBulletLines dw 1 
 	
@@ -4611,26 +4627,26 @@ Enemy3NormalFixed dw 16,  5, 152
 	tree3_x0 dw -400
 	tree4_x0 dw 300
 		   
-tree1_x dw 300
-tree1_y dw 120
-tree1_z dw 800
+	tree1_x dw 300
+	tree1_y dw 120
+	tree1_z dw 800
 
-tree2_x1 dw 100
-tree2_y dw 130
-tree2_z dw 1200
+	tree2_x1 dw 100
+	tree2_y dw 130
+	tree2_z dw 1200
 
-tree3_x1 dw 400
-tree3_y dw 140
-tree3_z dw 800
+	tree3_x1 dw 400
+	tree3_y dw 140
+	tree3_z dw 800
 
-tree4_x1 dw -300
-tree4_y dw 80
-tree4_z dw 200
+	tree4_x1 dw -300
+	tree4_y dw 80
+	tree4_z dw 200
 
-enemy_x     dw 20
-enemy_y     dw 180
-target_x    dw 110
-target_y    dw 160
+	enemy_x     dw 20
+	enemy_y     dw 180
+	target_x    dw 110
+	target_y    dw 160
 	moveToggle db 0
 	
 	missileCnt dw 1
@@ -4659,7 +4675,7 @@ target_y    dw 160
  MissileApproachX      dw 0   ; screen X (tracks player)
  MissileApproachY      dw 0   ; screen Y (tracks player)
 
-	horizonLine dw 110
+	horizonLine dw 60
 	
 	bmpEnemyLeft db 'E_L.bmp', 0
 	bmpEnemyRight db 'E_L.bmp', 0
@@ -4713,7 +4729,7 @@ normalLeftTImer dw 0
 	enemyBaseX dw 0		
 	
 
-    music_data dw 200, 3    ; C4
+    music_data_old dw 200, 3    ; C4
                dw 220, 4    ; D4
                dw 240, 3    ; E4
                dw 240, 4    ; F4
@@ -4732,8 +4748,52 @@ normalLeftTImer dw 0
                dw 200, 4      ; End marker
                dw 180, 7      ; End marker
                dw 0,0      ; End marker
+			   
+music_data dw 293, 4    ; D4
+    dw 293, 4    ; D4
+    dw 329, 4    ; E4
+    dw 293, 8    ; D4 (hold)
+    
+    dw 440, 4    ; A4
+    dw 392, 4    ; G4
+    dw 349, 4    ; F4
+    dw 329, 8    ; E4
     
 
+	
+    dw 293, 4    ; D4
+    dw 349, 4    ; F4
+    dw 440, 4    ; A4
+    dw 523, 12   ; C5 (Sustain)
+    
+    ; --- Action Bridge (Fast section) ---
+    dw 440, 2    ; A4
+    dw 466, 2    ; Bb4 (Tension)
+    dw 440, 2    ; A4
+    dw 392, 2    ; G4
+    dw 349, 4    ; F4
+    dw 329, 4    ; E4
+    dw 293, 8    ; D4
+    
+    ; --- High Speed Lead ---
+    dw 587, 4    ; D5
+    dw 523, 4    ; C5
+    dw 440, 4    ; A4
+    dw 392, 4    ; G4
+    dw 440, 16   ; A4 (End of phrase)
+    
+    dw 0, 0      ; Loop Marker
+	
+	
+; -------------------------------------------------------------------------
+; HIGH SCORE VARIABLES
+; -------------------------------------------------------------------------
+	HighScore       dw 0, 0           ; Matches the format of Score
+	ScoreFileName   db 'score.dat', 0 ; Using .dat since we are saving in binary
+	FileNewHsBmp    db 'newHs.bmp', 0
+	FileNoHsBmp     db 'noHs.bmp', 0
+	scoreBannerBmp db 'scrBnr.bmp', 0
+	ScoreFileHandle dw ?
 	
 	BulletLines_generalZ dw 100
 	
@@ -4777,17 +4837,7 @@ normalLeftTImer dw 0
 	BulletLine4R_Y0 dw  5
 	BulletLine4R_Y1 dw  5
 	
-	
-	BulletLine5_X0 dw 5
-	BulletLine5_X1 dw 8 
-	BulletLine5_Y0 dw 1    
-	BulletLine5_Y1 dw 1
 
-	BulletLine6_X0 dw 0  
-	BulletLine6_X1 dw 3    
-	BulletLine6_Y0 dw 2
-	BulletLine6_Y1 dw 2
-	
 	cxMODEMissile dw 0
 	CxSizeTimerMissile dw 1
 	
@@ -4798,7 +4848,7 @@ normalLeftTImer dw 0
 	MissileExplosionBmp db "M_E.bmp", 0
 	MissileExplosionBmp2 db "M_E2.bmp",0 
 
-	
+	playGameAfter db 0
     music_length equ ($ - music_data) / 4
     
     current_note_index dw 0
@@ -4807,6 +4857,9 @@ normalLeftTImer dw 0
     music_enabled db 1
 	
 	GameOver db 0
+		Score dw 0, 0   ; two words: Score[0]=high word (0..99), Score[1]=low word (0..9999)
+	                ; combined = Score[0]*100000 + Score[1], max 999999
+					
 	enemyMoveCnt db 1
 			
 screen_xl   dw ?
@@ -4818,39 +4871,42 @@ screen_ytip  dw ?
 	_spktog dw 0
 	
 	SB_BASE      EQU 220h
-DSP_RESET    EQU SB_BASE + 6
-DSP_READ     EQU SB_BASE + 0Ah
-DSP_WRITE    EQU SB_BASE + 0Ch
-DSP_RDSTAT   EQU SB_BASE + 0Eh
-SAMPLE_DELAY EQU 28
-CHUNK_SIZE   EQU 400h
-SongFile1     DB 'TDZ.raw', 0
-SongTakeMyBreathAway     DB 'TMBA.RAW', 0
-file_handle  DW 0
-bytes_read   DW 0
-chunk_buf    DB CHUNK_SIZE DUP(0)
-InstFile1 db 'INST_1.raw', 0
-InstFile2 db 'INST_2.raw', 0
-InstFile3 db 'INST_3.raw', 0
-FileExplosionSfx db 'EXPL.raw', 0
-FileStallSfx db 'stl.raw', 0
-isMissileActive db 0
+	DSP_RESET    EQU SB_BASE + 6
+	DSP_READ     EQU SB_BASE + 0Ah
+	DSP_WRITE    EQU SB_BASE + 0Ch
+	DSP_RDSTAT   EQU SB_BASE + 0Eh
+	SAMPLE_DELAY EQU 28
+	CHUNK_SIZE   EQU 400h
+	SongFile1     DB 'TDZ.raw', 0
+	SongTakeMyBreathAway     DB 'TMBA.RAW', 0
+	file_handle  DW 0
+	bytes_read   DW 0
+	chunk_buf    DB CHUNK_SIZE DUP(0)
+	InstFile1 db 'INST_1.raw', 0
+	InstFile2 db 'INST_2.raw', 0
+	InstFile3 db 'INST_3.raw', 0
+	FileExplosionSfx db 'EXPL.raw', 0
+	FileStallSfx db 'stl.raw', 0
+	isMissileActive db 0
+	MainMenuNow db 0
+	
+	BresenhamRandom db 0   ; 0 = normal, 1 = apply random Y offset per pixel
 
 	explodeTimer db 0
 	ExplodeStage2Timer db 0
 	
 	OldKeyboardInterruptOffset  dw ?   ; Old keaboard interrupt offset
-OldKeyboardInterruptSegment dw ?   ; Old keaboard interrupt Segment 
-OldTimeInterruptOffset      dw ?   ; Old Time interrupt offset
-OldTimeInterruptSegment     dw ?   ; Old Time interrupt Segment
+	OldKeyboardInterruptSegment dw ?   ; Old keaboard interrupt Segment 
+	OldTimeInterruptOffset      dw ?   ; Old Time interrupt offset
+	OldTimeInterruptSegment     dw ?   ; Old Time interrupt Segment
 
-CurrentOldInterruptOffset   dw ?   ; The currnet Old interrupt offset
-CurrentOldInterruptSegment  dw ?   ; The currnet Old interrupt
-	
-keyboardInterruptPOS    equ 9*4    ; The position of the keaborad interrupt in the interrupt vector table
-TimeInterruptPOS        equ 28*4   ; The position of the time interrupt in the interrupt vector table
-currentInterruptPOS     db ?       ; The cuurent interrupt position in the interrupt vector table
-currentInterruptOFFSET  dw ?       ; The cuurent interrupt offset
+	CurrentOldInterruptOffset   dw ?   ; The currnet Old interrupt offset
+	CurrentOldInterruptSegment  dw ?   ; The currnet Old interrupt
+		
+	keyboardInterruptPOS    equ 9*4    ; The position of the keaborad interrupt in the interrupt vector table
+	TimeInterruptPOS        equ 28*4   ; The position of the time interrupt in the interrupt vector table
+	currentInterruptPOS     db ?       ; The cuurent interrupt position in the interrupt vector table
+	currentInterruptOFFSET  dw ?       ; The cuurent interrupt offset
 
 	msg db "press any key  to see scan codes    or Escape to exit ",13,10,'$'
 	
@@ -4868,6 +4924,259 @@ currentInterruptOFFSET  dw ?       ; The cuurent interrupt offset
 	key_pressed db ?
 	
 	extendedKey db 0
+	
+	DigitZero dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 0, 1, 255
+				dw 2, 1, 255
+				dw 0, 2, 255
+				dw 2, 2, 255
+				dw 0, 3, 255
+				dw 2, 3, 255
+				dw 0, 4, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 0, 0, 0
+	
+	DigitOne dw 1, 0, 255
+				dw 0, 1, 255
+				dw 1, 1, 255
+				dw 1, 2, 255
+				dw 1, 3, 255
+				dw 1, 4, 255
+				dw 0, 0, 0
+	
+	DigitTwo dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 2, 1, 255
+				dw 1, 2, 255
+				dw 2, 2, 255
+				dw 1, 3, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 3, 4, 255
+				dw 0, 0, 0
+				
+	DigitThree dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 2, 1, 255
+				dw 0, 2, 255
+				dw 1, 2, 255
+				dw 2, 2, 255
+				dw 2, 3, 255
+				dw 0, 4, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 0, 0, 0
+	
+	DigitFour dw 2, 0, 255
+				dw 3, 0, 255
+				dw 1, 1, 255
+				dw 3, 1, 255
+				dw 0, 2, 255
+				dw 3, 2, 255
+				dw -1, 3, 255
+				dw 0, 3, 255
+				dw 1, 3, 255
+				dw 2, 3, 255
+				dw 3, 3, 255
+				dw 3, 4, 255
+				dw 0, 0, 0
+
+	DigitFive dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 0, 1, 255
+				dw 0, 2, 255
+				dw 1, 2, 255
+				dw 2, 2, 255
+				dw 2, 3, 255
+				dw 0, 4, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 0, 0, 0
+	
+	DigitSix dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 0, 1, 255
+				dw 0, 2, 255
+				dw 1, 2, 255
+				dw 2, 2, 255
+				dw 0, 3, 255
+				dw 2, 3, 255
+				dw 0, 4, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 0, 0, 0
+
+	DigitSeven dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 2, 1, 255
+				dw 1, 2, 255
+				dw 0, 3, 255
+				dw 0, 4, 255
+				dw 0, 0, 0
+
+	DigitEight dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 0, 1, 255
+				dw 2, 1, 255
+				dw 0, 2, 255
+				dw 1, 2, 255
+				dw 2, 2, 255
+				dw 0, 3, 255
+				dw 2, 3, 255
+				dw 0, 4, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 0, 0, 0
+	
+	DigitNine dw 0, 0, 255
+				dw 1, 0, 255
+				dw 2, 0, 255
+				dw 0, 1, 255
+				dw 2, 1, 255
+				dw 0, 2, 255
+				dw 1, 2, 255
+				dw 2, 2, 255
+				dw 2, 3, 255
+				dw 0, 4, 255
+				dw 1, 4, 255
+				dw 2, 4, 255
+				dw 0, 0, 0
+				
+	DigitTable dw offset DigitZero, offset DigitOne,  offset DigitTwo,  offset DigitThree
+           dw offset DigitFour, offset DigitFive,  offset DigitSix,  offset DigitSeven
+           dw offset DigitEight, offset DigitNine
+		   
+; =========================================================================
+; ENEMY CONTEXT RECORD — field byte-offsets (every field is one word = 2 bytes)
+; =========================================================================
+	CTX_ALWAYS_ACTIVE  equ  0   ; 1 = skip active/delay check (enemy 1)
+	CTX_ACTIVE_PTR     equ  2   ; -> Active byte  (0 if always-active)
+	CTX_DELAY_PTR      equ  4   ; -> DelayTimer word
+	CTX_DELAY_LIMIT    equ  6   ; frames to wait before first activation (value, not ptr)
+	CTX_ENEMYLEFT_PTR  equ  8   ; -> enemyLeft byte
+	CTX_DISAPPEAR_PTR  equ 10   ; -> DisappearNow byte
+	CTX_LEFTTIMER_PTR  equ 12   ; -> enemyLeftTimer word
+	CTX_DEADBYFIRE_PTR equ 14   ; -> EnemyDeadByFire byte
+	CTX_ISDEAD_PTR     equ 16   ; -> isDead byte
+	CTX_STAGE1_PTR     equ 18   ; -> StageOneEnemyExplosionComplete byte
+	CTX_WAITEXP_PTR    equ 20   ; -> WaitForEnemyExp2 byte
+	CTX_ENEMYX_PTR     equ 22   ; -> EnemyX word
+	CTX_ENEMYY_PTR     equ 24   ; -> EnemyY word
+	CTX_STAYTIMER_PTR  equ 26   ; -> EnemyStayAtPlaceTimer word
+	CTX_CXMODE_PTR     equ 28   ; -> cxMODE word
+	CTX_CXTIMER_PTR    equ 30   ; -> CxSizeTimer word
+	CTX_ISLEFT_PTR     equ 32   ; -> isLeft byte
+	CTX_ISFORWARD_PTR  equ 34   ; -> isForawrd byte
+	CTX_NORMLFT_PTR    equ 36   ; -> normalLeftTImer word
+	CTX_NORMAL_OFF     equ 38   ; direct offset value of Normal sprite array
+	CTX_NORMALFX_OFF   equ 40   ; direct offset value of NormalFixed sprite array
+	CTX_CLOSE_OFF      equ 42   ; direct offset value of Close sprite array
+	CTX_MIDDLE_OFF     equ 44   ; direct offset value of Middle sprite array
+	CTX_FAR_OFF        equ 46   ; direct offset value of Far sprite array
+	CTX_XVAL_MIN       equ 48   ; Xval random lower bound (value, not ptr)
+	CTX_XVAL_MAX       equ 50   ; Xval random upper bound (value, not ptr)
+	CTX_DISPLVL_PTR    equ 52   ; -> disappearLevel byte
+	CTX_SIZE           equ 54   ; total bytes per entry (27 words)
+
+; =========================================================================
+; Context table — one CTX_SIZE-byte record per enemy
+; =========================================================================
+	EnemyCtxTable    dw 1                                     ; CTX_ALWAYS_ACTIVE
+    dw 0                                     ; CTX_ACTIVE_PTR      (unused)
+    dw 0                                     ; CTX_DELAY_PTR       (unused)
+    dw 0                                     ; CTX_DELAY_LIMIT     (unused)
+    dw offset enemyLeft
+    dw offset DisappearNow
+    dw offset enemyLeftTimer
+    dw offset EnemyDeadByFire
+    dw offset isDead
+    dw offset StageOneEnemyExplosionComplete
+    dw offset WaitForEnemyExp2
+    dw offset EnemyX
+    dw offset EnemyY
+    dw offset EnemyStayAtPlaceTimer
+    dw offset cxMODE
+    dw offset CxSizeTimer
+    dw offset isLeft
+    dw offset isForawrd
+    dw offset normalLeftTImer
+    dw offset EnemyNormal
+    dw offset EnemyNormalFixed
+    dw offset EnemyClose
+    dw offset EnemyMiddle
+    dw offset EnemyFar
+    dw 40                                    ; CTX_XVAL_MIN
+    dw 100                                   ; CTX_XVAL_MAX
+    dw offset disappearLevel
+
+; ---- Entry 1 : Enemy 2  (30-frame activation delay) ----
+    dw 0
+    dw offset Enemy2Active
+    dw offset Enemy2DelayTimer
+    dw 30
+    dw offset enemyLeft2
+    dw offset DisappearNow2
+    dw offset enemyLeftTimer2
+    dw offset EnemyDeadByFire2
+    dw offset isDead2
+    dw offset StageOneEnemyExplosionComplete2
+    dw offset WaitForEnemyExp2_2
+    dw offset EnemyX2
+    dw offset EnemyY2
+    dw offset EnemyStayAtPlaceTimer2
+    dw offset cxMODE2
+    dw offset CxSizeTimer2
+    dw offset isLeft2
+    dw offset isForawrd2
+    dw offset normalLeftTImer2
+    dw offset Enemy2Normal
+    dw offset Enemy2NormalFixed
+    dw offset EnemyClose2
+    dw offset EnemyMiddle2
+    dw offset EnemyFar2
+    dw 10
+    dw 30
+    dw offset disappearLevel2
+
+; ---- Entry 2 : Enemy 3  (60-frame activation delay) ----
+    dw 0
+    dw offset Enemy3Active
+    dw offset Enemy3DelayTimer
+    dw 60
+    dw offset enemyLeft3
+    dw offset DisappearNow3
+    dw offset enemyLeftTimer3
+    dw offset EnemyDeadByFire3
+    dw offset isDead3
+    dw offset StageOneEnemyExplosionComplete3
+    dw offset WaitForEnemyExp2_3
+    dw offset EnemyX3
+    dw offset EnemyY3
+    dw offset EnemyStayAtPlaceTimer3
+    dw offset cxMODE3
+    dw offset CxSizeTimer3
+    dw offset isLeft3
+    dw offset isForawrd3
+    dw offset normalLeftTImer3
+    dw offset Enemy3Normal
+    dw offset Enemy3NormalFixed
+    dw offset EnemyClose3
+    dw offset EnemyMiddle3
+    dw offset EnemyFar3
+    dw 40
+    dw 100
+    dw offset disappearLevel3
+
+	EnemyCtxCount dw 3
 ; --------------------------
 
 
@@ -4880,8 +5189,12 @@ start:
 	int 10h
 	
 @@resets:
-	call resetVariabels
-	call SpawnEnemyOnRandomCorner
+	call LoadHighScore
+	
+    mov si, offset EnemyCtxTable   ; point to enemy 1's context
+    call resetVariabelsCtx
+    call SpawnEnemyCtx
+	
 	call Add_XY_ToMissile
 	call SyncAllMissiles
 	
@@ -4891,97 +5204,1199 @@ start:
 	push offset SongFile1
 	call PlaySong
 	jnc @@drawLoop 
-;	call InitMusic
 	call setKeyboradInterrupt
 @@fullMenu:
 	mov [byte ptr keys + 1], 0
 	call restoreKeyboradInterrupt
-;	call StopMusic
 	call SpeakerOff
 	mov [GameOver], 0
     call MainMenu
     call TransitionBuffer
+@@playSongLoop:
     call flushKeys
+	mov [byte ptr MainMenuNow], 1
+	mov [byte ptr playGameAfter], 0
 	push offset SongTakeMyBreathAway
-	call PlaySongAndMainMenu
+	call PlaySong
     jc @@end
+	cmp [byte ptr playGameAfter], 1
+	je @@startGame
+	jmp @@playSongLoop
+@@startGame:
 	call flushKeys
 	cmp [cutScenePlayed], 1
 	je @@skipCutscene
 	call playStartCutscene
 @@skipCutscene:
+	mov [byte ptr MainMenuNow], 0
 	call setKeyboradInterrupt
-	;call LaunchMissileApproach
 
 @@MainGameLoop:
+	cmp [GameOver], 1
+	je @@lastIter	
 	cmp [byte ptr keys + 1], 1
 	je @@fullMenu
-	;jc @@fullMenu
-	cmp [GameOver], 1
-	je @@end
+	jmp @@continue
+@@lastIter:
+	cmp [lastIter], 1
+	je @@end 
+	mov [byte ptr lastIter], 1
 @@continue:	
-;	call resetKeys
-	;call HandleMusic
-	; drawing
+
 	call fillAround
 	call TickMusic
+	
 	; checking movement
 	call CheckAndMoveNew
 	call MoveForwards
 	
-	; draw plane (static) 
 
-	; draw enviorment (moving)
 	call DrawGrassLines
+	call FillSky
 	
-	;call SetCXbyTime
-	;push cx
-	;call DrawEnemy
-	
-	call HandleEnemy
-	call HandleEnemy2
-	call HandleEnemy3
+	call HandleAllEnemies
+	call DrawScore
 
 	call HandleWeapons
+
 	call LaunchMissile
 
 	call DrawPlane
 
-	;push offset EnemyNormal
-	;push offset EnemyNormal
-	;call DrawFromPixelArray
-	
-	; DEBUG: FIND color
-	
-;	call FindColorUnderMouse
-	
-	; move enemy 
-;	call moveEnemy
 	
 	call HandleAltitude
 	call HandleSpeed
-	
-	;call debugFindColors
-	; showing as a whole (everything is copied to secondry buffer)
-	
-	;call HandleMissileApproach
+
 	call TransitionBuffer
 	
-	
+
 	; return
 	jmp @@MainGameLoop
 	
 @@end:
-;	call StopMusic
+	call restoreKeyboradInterrupt
+	call SpeakerOn
 	call SpeakerOff
 	mov ax, 3h
 	int 10h
 	
 
-; -------------------------ן
+; -------------------------
 exit:
 	mov ax, 4c00h
 	int 21h
+	
+
+	
+; =============================================================================
+; PROC DrawScoreAt
+; -----------------------------------------------------------------------------
+; Purpose : Render a 6-digit score (0-999999) at a specific screen coordinate
+;           using DrawDigitToOffscreenBuffer. This generalized procedure 
+;           handles both the HUD in-game score and the Game Over screen scores.
+;           Score is stored as two words: [offset] (hundred-thousands) and 
+;           [offset+2] (0-99999).
+;
+; Entry   : [bp+8] = Offset of Score variable (e.g., Score or HighScore).
+;           [bp+6] = X coordinate for the top-left of the first digit.
+;           [bp+4] = Y coordinate for the top-left of the digits.
+;
+; Exit    : Six digit pixels written to secondBuffer.
+;
+; Modifies: None (all registers preserved via push/pop).
+;
+; =============================================================================
+proc DrawScoreAt
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push dx
+    push si
+
+    mov si, [bp+8] ; pointer to Score or HighScore
+
+    ; --- High 2 Digits (Hundred-Thousands & Ten-Thousands) ---
+    mov ax, [si]
+    xor dx, dx
+    mov bx, 10
+    div bx
+
+    push dx            ; save ten-thousands digit
+    push [word ptr bp+4]        ; Y
+    push [word ptr bp+6]        ; X
+    push ax            ; hundred-thousands digit
+    call DrawDigitToOffscreenBuffer
+
+    pop ax             ; restore ten-thousands digit
+    push [word ptr bp+4]        ; Y
+    mov dx, [bp+6]
+    add dx, 6          ; X + 6
+    push dx            
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Low 4 Digits (Thousands to Units) ---
+    mov ax, [si+2]
+
+    ; Thousands
+    xor dx, dx
+    mov bx, 1000
+    div bx
+    push dx
+    push [word ptr bp+4]
+    mov dx, [bp+6]
+    add dx, 12         ; X + 12
+    push dx
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; Hundreds
+    pop ax
+    xor dx, dx
+    mov bx, 100
+    div bx
+    push dx
+    push [word ptr bp+4]
+    mov dx, [bp+6]
+    add dx, 18         ; X + 18
+    push dx
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; Tens
+    pop ax
+    xor dx, dx
+    mov bx, 10
+    div bx
+    push dx
+    push [word ptr bp+4]
+    mov dx, [bp+6]
+    add dx, 24         ; X + 24
+    push dx
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; Units
+    pop ax
+    push [word ptr bp+4]
+    mov dx, [bp+6]
+    add dx, 30         ; X + 30
+    push dx
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    pop si
+    pop dx
+    pop bx
+    pop ax
+    pop bp
+    ret 6
+endp DrawScoreAt
+	
+; =============================================================================
+; PROC LoadHighScore
+; -----------------------------------------------------------------------------
+; Purpose : Opens the high score data file and reads the 4-byte score 
+;           (two words) into the HighScore variable. If the file does not 
+;           exist (e.g., first time running the game), it exits gracefully 
+;           without crashing.
+;
+; Entry   : HighScoreFileName in data segment (from inside proc).
+;
+; Exit    : HighScore variable updated if the file exists on disk.
+;
+; Modifies: None (all registers preserved via push/pop).
+;
+; =============================================================================
+proc LoadHighScore
+    push ax
+    push bx
+    push cx
+    push dx
+	
+	clc
+    mov dx, offset ScoreFileName
+    mov ah, 3Dh
+    mov al, 2 ; Read/Write mode
+    int 21h
+    jc @@CreateFile ; If file doesn't exist, create it
+
+    mov [ScoreFileHandle], ax
+    mov bx, ax
+    
+    ; Read 4 bytes (the 2 words of HighScore)
+    mov ah, 3Fh
+    mov cx, 4
+    mov dx, offset HighScore
+    int 21h
+
+    ; Close file
+    mov ah, 3Eh
+    mov bx, [ScoreFileHandle]
+    int 21h
+    jmp @@Done
+
+@@CreateFile:
+    ; Create file for the very first time playing
+    mov dx, offset ScoreFileName
+    mov cx, 0
+    mov ah, 3Ch
+    int 21h
+	jc @@CreationError
+    mov [ScoreFileHandle], ax
+
+    ; Write default 0, 0
+    mov [HighScore], 0
+    mov [HighScore+2], 0
+    mov bx, ax
+    mov ah, 40h
+    mov cx, 4
+    mov dx, offset HighScore
+    int 21h
+
+    ; Close
+    mov ah, 3Eh
+    mov bx, [ScoreFileHandle]
+    int 21h
+	jmp @@done
+	
+@@CreationError:
+    ; If creating the file failed (e.g., drive full or write-protected),
+    ; we set our memory variables to 0 anyway so the game can run this session,
+    ; but we skip ALL writing and closing instructions completely.
+    mov [HighScore], 0
+    mov [HighScore+2], 0
+
+@@Done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp LoadHighScore
+
+; =============================================================================
+; PROC SaveHighScore
+; -----------------------------------------------------------------------------
+; Purpose : Creates or overwrites the high score data file and writes the 
+;           current 4-byte HighScore variable to it. Ensures progress is 
+;           saved permanently to disk.
+;
+; Entry   : HighScore variable contains the updated score.
+;           HighScoreFileName (null-terminated string) in data segment.
+;
+; Exit    : Score written to disk.
+;
+; Modifies: None (all registers preserved via push/pop).
+;
+; =============================================================================
+proc SaveHighScore
+    push ax
+    push bx
+    push cx
+    push dx
+
+    ; Create/Overwrite file
+    mov dx, offset ScoreFileName
+    mov cx, 0
+    mov ah, 3Ch
+    int 21h
+	jc @@ret ; ERROR 
+    mov [ScoreFileHandle], ax
+
+    ; Write current HighScore
+    mov bx, ax
+    mov ah, 40h
+    mov cx, 4
+    mov dx, offset HighScore
+    int 21h
+
+    ; Close
+    mov ah, 3Eh
+    mov bx, [ScoreFileHandle]
+    int 21h
+
+@@ret:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp SaveHighScore
+	
+
+; =============================================================================
+; PROC AddScore
+; -----------------------------------------------------------------------------
+; Purpose : Add 100 points to the player score (enemy shot down).
+;           Score is stored as two words: Score[0] = 0..9 (hundred-thousands),
+;           Score[1] = 0..99999. Max total = 999999.
+;
+; Entry   : Score[0], Score[1]
+; Exit    : Score updated, clamped to 999999.
+; Modifies: AX
+; =============================================================================
+proc AddScore
+    push ax
+    push dx
+
+    add [Score+2], 100          ; Score[1] += 100
+    cmp [Score+2], 10000        ; Check if low word overflowed 9999
+    jl @@clampMax
+    sub [Score+2], 10000        ; FIX: Subtract 10000 to keep the remainder (e.g., 50)
+    inc [Score]                 ; carry to high word
+
+@@clampMax:
+    ; clamp to 999999: if high >= 100
+    cmp [Score], 100
+    jl @@ret
+    mov [Score], 99             ; Max high two digits
+    mov [Score+2], 9999         ; Max low four digits
+
+@@ret:
+    pop dx
+    pop ax
+    ret
+endp AddScore
+
+; =============================================================================
+; PROC SubScore
+; -----------------------------------------------------------------------------
+; Purpose : Subtract 50 points from the player score (enemy escaped).
+;           Clamps at 0 — score cannot go negative.
+;
+; Entry   : Score[0], Score[1]
+; Exit    : Score updated, floor 0.
+; Modifies: AX
+; =============================================================================
+proc SubScore
+    push ax
+
+    ; Check if total score is already 0
+    cmp [Score], 0
+    jne @@doSub
+    cmp [Score+2], 0
+    je @@ret           ; already 0, nothing to do
+    cmp [Score+2], 50
+    jge @@simpleSubLow
+
+    ; Low word < 50 and high word == 0: clamp to 0
+    mov [Score], 0
+    mov [Score+2], 0
+    jmp @@ret
+
+@@simpleSubLow:
+    sub [Score+2], 50
+    jmp @@ret
+
+@@doSub:
+    ; High word > 0, so total > 0
+    cmp [Score+2], 50
+    jge @@okSub
+    ; Need to borrow from high word
+    dec [Score]
+    add [Score+2], 10000   ; Borrow 10,000
+@@okSub:
+    sub [Score+2], 50
+
+@@ret:
+    pop ax
+    ret
+endp SubScore
+
+; =============================================================================
+; PROC DrawScore
+; -----------------------------------------------------------------------------
+; Purpose : Render the player score (0-999999) as six digits in the top-left
+;           corner of the screen using DrawDigitToOffscreenBuffer.
+;           Digits are drawn at Y=5, starting at X=2, with 6px spacing.
+;           Score is stored as Score[0] (hundred-thousands) + Score[1] (0-99999).
+;			This proc simply calls draw score  at to keep main loop clean, and sraws the score banner bmp. 
+;
+; Exit    : Six digit pixels written to secondBuffer.
+; Modifies: None 
+; =============================================================================
+proc DrawScore
+	push dx 
+	
+	mov [BmpWidth], 40
+	mov [BmpHeight], 10
+	mov [BmpTop], 5
+	mov [BmpLeft], 2
+	mov dx, offset scoreBannerBmp
+	mov [fileNamePtr], dx
+	call OpenShowBmp
+
+	push offset Score
+	push 45  ; X coordinate
+	push 7  ; Y coordinate
+	call DrawScoreAt
+	
+	pop dx
+    ret
+endp DrawScore
+	
+; =============================================================================
+; PROC SetCXbyTimeCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for SetCXbyTime / SetCXbyTime2/3.
+;           Ticks CxSizeTimer via SHL; on overflow increments cxMODE (max 4)
+;           and resets the timer. Returns CX = cxMODE * 100.
+;
+; Entry   : SI = context pointer.
+; Exit    : CX = cxMODE * 100.
+; =============================================================================
+proc SetCXbyTimeCtx
+    push ax
+    push bx
+
+    mov bx, [word ptr si + CTX_CXTIMER_PTR]   ; BX -> CxSizeTimer
+    shl [word ptr bx], 1
+    jnc @@calc
+
+    mov [word ptr bx], 1                       ; reset timer on overflow
+    mov bx, [word ptr si + CTX_CXMODE_PTR]    ; BX -> cxMODE
+    cmp [word ptr bx], 4
+    jg @@calc
+    inc [word ptr bx]
+
+@@calc:
+    xor cx, cx
+    mov bx, [word ptr si + CTX_CXMODE_PTR]
+    mov ax, [word ptr bx]
+    mov bx, 100
+    mul bx
+    add cx, ax
+	
+
+    pop bx
+    pop ax
+    ret
+endp SetCXbyTimeCtx
+
+; =============================================================================
+; PROC EnemyDisappearStepCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for EnemyDisappearStep / 2 / 3.
+;           Selects the correct size sprite by advancing CX through
+;           SetCXbyTimeCtx; sets isDead when CX exceeds 400.
+;
+; Entry   : SI = context pointer.
+; Exit    : DI = sprite array offset to draw this frame.
+;           isDead set to 1 once CX > 400.
+; =============================================================================
+proc EnemyDisappearStepCtx
+    push ax
+    push bx
+    push cx
+
+    call SetCXbyTimeCtx        ; CX = cxMODE * 100
+
+    cmp cx, 100
+    jnle @@close
+    mov di, [word ptr si + CTX_NORMAL_OFF]
+    jmp @@ret
+@@close:
+    cmp cx, 200
+    jnle @@middle
+    mov di, [word ptr si + CTX_CLOSE_OFF]
+    jmp @@ret
+@@middle:
+    cmp cx, 300
+    jnle @@far
+    mov di, [word ptr si + CTX_MIDDLE_OFF]
+    jmp @@ret
+@@far:
+    cmp cx, 400
+    jnle @@markDead
+    mov di, [word ptr si + CTX_FAR_OFF]
+    jmp @@ret
+@@markDead:
+    mov bx, [word ptr si + CTX_ISDEAD_PTR]
+    mov [byte ptr bx], 1
+@@ret:
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp EnemyDisappearStepCtx
+
+; =============================================================================
+; PROC MoveEnemyToBoundryCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware unified replacement for MoveEnemyToBoundry,
+;           MoveEnemy2ToBoundry, and MoveEnemy3ToBoundry.
+;           Ticks EnemyStayAtPlaceTimer; on overflow moves the sprite one
+;           step toward (targetX, targetY) using a random 2-3 pixel step
+;           (capped to 1 if cxMODE > 2).  Updates isLeft / isForawrd.
+;
+; Entry   : [bp+4] = targetY, [bp+6] = targetX, [bp+8] = sprite array offset.
+;           SI = context pointer.
+; =============================================================================
+proc MoveEnemyToBoundryCtx
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+
+    mov dx, [bp+4]              ; targetY
+    mov cx, [bp+6]              ; targetX
+    mov di, [bp+8]              ; sprite array offset
+
+    ; Tick EnemyStayAtPlaceTimer — only move when it overflows
+    mov bx, [word ptr si + CTX_STAYTIMER_PTR]
+    shl [word ptr bx], 8
+    jnc @@checkX                ; no overflow = stay in place this frame
+    mov [word ptr bx], 1        ; reset timer
+
+@@checkY:
+    cmp [word ptr di+2], dx
+    je @@checkBoth
+    jl @@moreY
+@@lessY:
+    push di
+    push 2
+    push -1
+    call AddXToOffsetInArray
+    jmp @@checkX
+@@moreY:
+    push di
+    push 2
+    push 1
+    call AddXToOffsetInArray
+
+@@checkBoth:
+    mov ax, cx
+    sub ax, [di]
+    cmp ax, -10
+    jl @@checkX
+    cmp ax, 10
+    jg @@checkX
+    jmp @@bothEqual
+
+@@checkX:
+    ; Random step 2-3; capped to 1 if enemy is close (cxMODE > 2)
+    push dx
+    mov bx, 2
+    mov dx, 3
+    call RandomByCsW            ; AX = 2 or 3, BX/DX preserved by callee
+    pop dx
+
+    mov bx, [word ptr si + CTX_CXMODE_PTR]
+    cmp [word ptr bx], 2
+    jng @@continue
+    mov ax, 1
+
+@@continue:
+    cmp [di], cx
+    je @@ret
+    jl @@moreX
+@@lessX:
+    push di
+    push 0
+    neg ax
+    push ax
+    call AddXToOffsetInArray
+    mov bx, [word ptr si + CTX_ISLEFT_PTR]
+    mov [byte ptr bx], 1
+    jmp @@ret
+@@moreX:
+    push di
+    push 0
+    push ax
+    call AddXToOffsetInArray
+    mov bx, [word ptr si + CTX_ISLEFT_PTR]
+    mov [byte ptr bx], 0
+    jmp @@ret
+
+@@bothEqual:
+    mov bx, [word ptr si + CTX_ISFORWARD_PTR]
+    mov [byte ptr bx], 1
+@@ret:
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    pop bp
+    ret 6
+endp MoveEnemyToBoundryCtx
+
+; =============================================================================
+; PROC WaitToDisappearCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for WaitToDisappear / 2 / 3.
+;           Returns carry set and sets DisappearNow when the Normal
+;           sprite is within ±4 px of the given target.
+;
+; Entry   : [bp+4] = targetY, [bp+6] = targetX.  SI = context pointer.
+; Exit    : Carry set + DisappearNow = 1    at target.
+;           Carry clear                    not yet at target.
+; =============================================================================
+proc WaitToDisappearCtx
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push cx
+
+    clc
+    mov ax, [bp+6]             ; targetX
+    mov bx, [bp+4]             ; targetY
+
+    mov di, [word ptr si + CTX_NORMAL_OFF]
+
+    mov cx, [di]               ; Normal sprite current X
+    sub cx, ax
+    cmp cx, -4
+    jl @@ret
+    cmp cx, 4
+    jg @@ret
+
+    mov cx, [di+2]             ; Normal sprite current Y
+    sub cx, bx
+    cmp cx, -4
+    jl @@ret
+    cmp cx, 4
+    jg @@ret
+
+    mov bx, [word ptr si + CTX_DISAPPEAR_PTR]
+    mov [byte ptr bx], 1
+    stc
+@@ret:
+    pop cx
+    pop bx
+    pop ax
+    pop bp
+    ret 4
+endp WaitToDisappearCtx
+
+; =============================================================================
+; PROC KillEnemyCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for KillEnemy.
+;           Animates the two-stage explosion at the enemy position stored in
+;           the context.  Returns carry set when the full sequence is done.
+;
+; Entry   : SI = context pointer.
+; Exit    : Carry set = explosion finished; carry clear = still running.
+; =============================================================================
+proc KillEnemyCtx
+    push ax
+    push bx
+    push di
+
+    mov bx, [word ptr si + CTX_ENEMYX_PTR]
+    mov ax, [word ptr bx]
+    mov bx, [word ptr si + CTX_ENEMYY_PTR]
+    mov di, [word ptr bx]
+
+    mov bx, [word ptr si + CTX_STAGE1_PTR]
+    cmp [byte ptr bx], 1
+    je @@bigExplosion
+
+    ; Stage 1
+    mov [BmpWidth],  48
+    mov [BmpHeight], 31
+    mov [BmpTop],    di
+    mov [BmpLeft],   ax
+    mov [FileNamePtr], offset Enemy_ExplosionSmall
+
+    push si                    ; save context ptr
+    call OpenShowBmp
+    pop si                     ; SI restored before using it again
+
+    mov bx, [word ptr si + CTX_WAITEXP_PTR]
+    inc [byte ptr bx]
+    cmp [byte ptr bx], 5
+    clc
+    jl @@ret
+
+    mov bx, [word ptr si + CTX_STAGE1_PTR]
+    mov [byte ptr bx], 1
+    clc
+    jmp @@ret
+
+@@bigExplosion:
+    mov bx, [word ptr si + CTX_ENEMYY_PTR]
+    mov di, [word ptr bx]
+    mov bx, [word ptr si + CTX_ENEMYX_PTR]
+    mov ax, [word ptr bx]
+
+    mov [BmpWidth],  49
+    mov [BmpHeight], 39
+    mov [BmpTop],    di
+    mov [BmpLeft],   ax
+    mov [FileNamePtr], offset Enemy_ExplosionBig
+
+    push si                    
+    call OpenShowBmp
+    pop si                    
+
+    mov bx, [word ptr si + CTX_ENEMYY_PTR]
+    add [word ptr bx], 6
+    mov di, [word ptr bx]
+
+    cmp di, 160
+    jl @@endClc
+	call AddScore
+    stc
+    jmp @@ret
+@@endClc:
+    clc
+    jmp @@ret
+@@ret:
+    pop di
+    pop bx
+    pop ax
+    ret
+endp KillEnemyCtx
+
+; =============================================================================
+; PROC resetVariabelsCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for resetVariabels / 2 / 3.
+;           Copies NormalFixed  Normal and zeroes all per-enemy state flags.
+;
+; Entry   : SI = context pointer.
+; Exit    : Normal array restored; all state flags reset.
+; =============================================================================
+proc resetVariabelsCtx
+    push ax
+    push bx
+    push cx
+    push si
+    push di
+
+    ; Copy NormalFixed  Normal  (SI temporarily repurposed for src array)
+    mov di, [word ptr si + CTX_NORMAL_OFF]   ; destination
+    mov cx, si                               ; save context pointer in CX
+	push bx 
+	mov bx, CTX_NORMALFX_OFF
+	add bx, cx
+    mov si, [word ptr bx] ; source
+	pop bx
+
+@@copyLoop:
+    cmp [word ptr si], 0
+    jne @@ok
+    cmp [word ptr si+2], 0
+    jne @@ok
+    cmp [word ptr si+4], 0
+    je @@doneCopy
+@@ok:
+    mov ax, [si]
+    mov [di], ax
+    mov ax, [si+2]
+    mov [di+2], ax
+    mov ax, [si+4]
+    mov [di+4], ax
+    add si, 6
+    add di, 6
+    jmp @@copyLoop
+@@doneCopy:
+    mov [word ptr di],   0
+    mov [word ptr di+2], 0
+    mov [word ptr di+4], 0
+
+    mov si, cx                ; restore SI = context pointer
+
+    ; Reset all state flags
+    mov bx, [word ptr si + CTX_DISAPPEAR_PTR]
+    mov [byte ptr bx], 0
+
+    mov bx, [word ptr si + CTX_CXMODE_PTR]
+    mov [word ptr bx], 0
+
+    mov bx, [word ptr si + CTX_CXTIMER_PTR]
+    mov [word ptr bx], 1
+
+    mov bx, [word ptr si + CTX_DEADBYFIRE_PTR]
+    mov [byte ptr bx], 0
+
+    mov bx, [word ptr si + CTX_STAGE1_PTR]
+    mov [byte ptr bx], 0
+
+    mov bx, [word ptr si + CTX_WAITEXP_PTR]
+    mov [byte ptr bx], 0
+
+    mov bx, [word ptr si + CTX_ISDEAD_PTR]
+    mov [byte ptr bx], 0
+
+    mov bx, [word ptr si + CTX_NORMLFT_PTR]
+    mov [word ptr bx], 0
+
+    mov bx, [word ptr si + CTX_LEFTTIMER_PTR]
+    mov [word ptr bx], 0
+
+    mov bx, [word ptr si + CTX_ENEMYLEFT_PTR]
+    mov [byte ptr bx], 0
+
+    mov bx, [word ptr si + CTX_DISPLVL_PTR]
+    mov [byte ptr bx], 0
+
+    pop di
+    pop si
+    pop cx
+    pop bx
+    pop ax
+    ret
+endp resetVariabelsCtx
+
+; =============================================================================
+; PROC SpawnEnemyCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for SpawnEnemyOnRandomCorner / 2 / 3.
+;           Adds Y = 140 to the Normal array, then randomly assigns either a
+;           left-side spawn (enemyLeft = 1) or right-side spawn (X += 269).
+;
+; Entry   : SI = context pointer.  Normal array must be freshly reset.
+; =============================================================================
+proc SpawnEnemyCtx
+    push ax
+    push bx
+    push dx
+
+    ; Position Normal array at horizon (Y += 140)
+    mov ax, [word ptr si + CTX_NORMAL_OFF]
+    push ax
+    push 2
+    push 140
+    call AddXToOffsetInArray
+
+    ; Coin-flip: BX=0, DX=1  returns 0 (right) or 1 (left)
+    mov bx, 0
+    mov dx, 1
+    call RandomByCsW
+
+    cmp ax, 0
+    je @@isRight
+
+    ; Left spawn: mark enemyLeft
+    mov bx, [word ptr si + CTX_ENEMYLEFT_PTR]
+    mov [byte ptr bx], 1
+    jmp @@ret
+
+@@isRight:
+    ; Right spawn: push sprite to far-right edge (X += 269)
+    mov ax, [word ptr si + CTX_NORMAL_OFF]
+    push ax
+    push 0
+    push 269
+    call AddXToOffsetInArray
+
+@@ret:
+    pop dx
+    pop bx
+    pop ax
+    ret
+endp SpawnEnemyCtx
+
+; =============================================================================
+; PROC SyncAllEnemiesCtx
+; -----------------------------------------------------------------------------
+; Purpose : Context-aware replacement for SyncAllEnemies / 2 / 3.
+;           Shifts Close, Middle, and Far arrays by the same delta that was
+;           applied to Normal so all size-variants stay aligned.
+;
+; Entry   : SI = context pointer.  Normal array has already been moved.
+; =============================================================================
+proc SyncAllEnemiesCtx
+    push ax
+    push bx
+    push di
+
+    mov di, [word ptr si + CTX_NORMAL_OFF]   ; DI = Normal array (reference)
+
+    ; ---- Sync Close ----
+    mov bx, [word ptr si + CTX_CLOSE_OFF]
+    mov ax, [di]
+    sub ax, [bx]                             ; deltaX = Normal.X - Close.X
+    push bx
+    push 0
+    push ax
+    call AddXToOffsetInArray
+
+    mov bx, [word ptr si + CTX_CLOSE_OFF]   ; reload (AddXToOffsetInArray ret 6)
+    mov ax, [di+2]
+    sub ax, [bx+2]                           ; deltaY = Normal.Y - Close.Y
+    push bx
+    push 2
+    push ax
+    call AddXToOffsetInArray
+
+    ; ---- Sync Middle ----
+    mov bx, [word ptr si + CTX_MIDDLE_OFF]
+    mov ax, [di]
+    sub ax, [bx]
+    push bx
+    push 0
+    push ax
+    call AddXToOffsetInArray
+
+    mov bx, [word ptr si + CTX_MIDDLE_OFF]
+    mov ax, [di+2]
+    sub ax, [bx+2]
+    push bx
+    push 2
+    push ax
+    call AddXToOffsetInArray
+
+    ; ---- Sync Far ----
+    mov bx, [word ptr si + CTX_FAR_OFF]
+    mov ax, [di]
+    sub ax, [bx]
+    push bx
+    push 0
+    push ax
+    call AddXToOffsetInArray
+
+    mov bx, [word ptr si + CTX_FAR_OFF]
+    mov ax, [di+2]
+    sub ax, [bx+2]
+    push bx
+    push 2
+    push ax
+    call AddXToOffsetInArray
+
+    pop di
+    pop bx
+    pop ax
+    ret
+endp SyncAllEnemiesCtx
+
+; =============================================================================
+; PROC HandleOneEnemy
+; -----------------------------------------------------------------------------
+; Purpose : Unified per-frame handler for a single enemy, driven entirely by
+;           the context record passed on the stack.  Replaces all three
+;           HandleEnemy / HandleEnemy2 / HandleEnemy3 procs.
+;
+;           The full lifecycle is managed here:
+;             - Active/delay check (enemies 2 & 3 wait before first spawn).
+;             - Left-side timer  trigger DisappearNow.
+;             - Dead by fire     two-stage explosion, then respawn.
+;             - isDead           respawn from disappear sequence.
+;             - Normal flight    move toward horizon target, draw, check
+;                                 disappear trigger.
+;             - Disappear phase  shrink through size stages, drift to edge.
+;
+; Entry   : [bp+4] = offset of the enemy's CTX_SIZE-byte context record.
+;           All relevant enemy state is reached through that record.
+;
+; Exit    : Enemy drawn or removed. State variables updated via context ptrs.
+;
+; Modifies: Xval (shared global, safe — enemies are processed sequentially).
+;           DI is used internally (sprite pointer).
+;           All other registers preserved.
+; =============================================================================
+proc HandleOneEnemy
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    push si
+
+    mov si, [bp+4]              ; SI = context record pointer
+
+    ; ── Active / delay check (skipped for always-active enemy 1) ─────────────
+    cmp [word ptr si + CTX_ALWAYS_ACTIVE], 1
+    je @@dontWait
+
+    mov bx, [word ptr si + CTX_ACTIVE_PTR]
+    cmp [byte ptr bx], 1
+    je @@dontWait
+
+    ; Count delay frames; activate when limit is reached
+    mov bx, [word ptr si + CTX_DELAY_PTR]
+    inc [word ptr bx]
+    mov ax, [word ptr bx]
+    cmp ax, [word ptr si + CTX_DELAY_LIMIT]
+    jl @@ret
+
+    mov [word ptr bx], 0        ; reset delay timer
+    mov bx, [word ptr si + CTX_ACTIVE_PTR]
+    mov [byte ptr bx], 1
+    call resetVariabelsCtx
+    call SpawnEnemyCtx
+    jmp @@ret
+
+    ; ── Left-side spawn timer  set DisappearNow after 70 frames ─────────────
+@@dontWait:
+    mov bx, [word ptr si + CTX_ENEMYLEFT_PTR]
+    cmp [byte ptr bx], 1
+    jne @@regular
+
+    mov bx, [word ptr si + CTX_DISAPPEAR_PTR]
+    mov [byte ptr bx], 0
+    mov bx, [word ptr si + CTX_LEFTTIMER_PTR]
+    inc [word ptr bx]
+    cmp [word ptr bx], 70
+    jl @@regular
+    mov bx, [word ptr si + CTX_DISAPPEAR_PTR]
+    mov [byte ptr bx], 1
+
+    ; ── Route to appropriate phase ────────────────────────────────────────────
+@@regular:
+    mov bx, [word ptr si + CTX_DEADBYFIRE_PTR]
+    cmp [byte ptr bx], 1
+    je @@showEnemyExploding
+
+    mov bx, [word ptr si + CTX_ISDEAD_PTR]
+    cmp [byte ptr bx], 1
+    je @@makeNewEnemy
+
+    mov bx, [word ptr si + CTX_DISAPPEAR_PTR]
+    cmp [byte ptr bx], 1
+    je @@startDisappear
+
+    ; ── Normal flight ─────────────────────────────────────────────────────────
+    mov di, [word ptr si + CTX_NORMAL_OFF]
+
+    mov bx, [word ptr si + CTX_XVAL_MIN]
+    mov dx, [word ptr si + CTX_XVAL_MAX]
+    call RandomByCsW             ; AX = random Xval
+    mov [Xval], ax
+
+    mov ax, [horizonLine]
+    sub ax, [Xval]               ; targetY = horizonLine − Xval
+
+    push di                      ; array offset  [bp+8]
+    push 147                     ; targetX        [bp+6]
+    push ax                      ; targetY        [bp+4]
+    call MoveEnemyToBoundryCtx   ; ret 6
+
+    push di
+    call DrawFromPixelArray
+
+@@checkDisappear:
+    clc
+    push 147
+    mov ax, [horizonLine]
+    sub ax, [Xval]
+    push ax
+    call WaitToDisappearCtx      ; carry set = at target; sets DisappearNow
+    jc @@setDisappear
+    jmp @@ret
+@@setDisappear:
+    mov bx, [word ptr si + CTX_DISAPPEAR_PTR]
+    mov [byte ptr bx], 1
+    jmp @@ret
+
+    ; ── Disappear / shrink phase ──────────────────────────────────────────────
+@@startDisappear:
+    call EnemyDisappearStepCtx   ; DI = sprite to draw, may set isDead
+
+    mov bx, [word ptr si + CTX_ISDEAD_PTR]
+    cmp [byte ptr bx], 1
+    je @@ret                     ; fully gone — next frame routes to makeNewEnemy
+
+@@continueDisappear:
+    push di                      ; save current size sprite
+
+    ; Drift Normal sprite toward the exit boundary
+    mov ax, [word ptr si + CTX_NORMAL_OFF]
+    mov bx, [word ptr si + CTX_ENEMYLEFT_PTR]
+    cmp [byte ptr bx], 1
+    jne @@disappearRight
+@@disappearLeft:
+    push ax
+    push 339
+    push 20
+    call MoveEnemyToBoundryCtx
+    jmp @@disappearSync
+@@disappearRight:
+    push ax
+    push 20
+    push 20
+    call MoveEnemyToBoundryCtx
+
+@@disappearSync:
+    call SyncAllEnemiesCtx
+    pop di
+    push di
+    call DrawFromPixelArray
+    jmp @@ret
+
+    ; ── Shot by player — two-stage explosion ─────────────────────────────────
+@@showEnemyExploding:
+    call KillEnemyCtx
+    jnc @@ret                    ; explosion still running
+
+    ; ── Respawn ──────────────────────────────────────────────────────────────
+@@makeNewEnemy:
+    ; Only subtract if enemy was NOT killed by fire (natural escape)
+    mov bx, [word ptr si + CTX_DEADBYFIRE_PTR]
+    cmp [byte ptr bx], 1
+    je @@skipSubScore
+    call SubScore       ; -50 points for letting enemy escape
+@@skipSubScore:
+    call resetVariabelsCtx
+
+    ; Delayed enemies deactivate and let the delay system re-spawn them
+    cmp [word ptr si + CTX_ALWAYS_ACTIVE], 1
+    je @@spawnNow
+    mov bx, [word ptr si + CTX_ACTIVE_PTR]
+    mov [byte ptr bx], 0
+    mov bx, [word ptr si + CTX_DELAY_PTR]
+    mov [word ptr bx], 0
+    jmp @@ret
+
+@@spawnNow:
+    call SpawnEnemyCtx
+
+@@ret:
+    pop si
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    pop bp
+    ret 2
+endp HandleOneEnemy
+
+; =============================================================================
+; PROC HandleAllEnemies
+; -----------------------------------------------------------------------------
+; Purpose : Loop over every entry in EnemyCtxTable and call HandleOneEnemy
+;           for each one.  Replaces the three separate HandleEnemy calls in
+;           the main game loop.
+;
+; Entry   : EnemyCtxTable, EnemyCtxCount.
+; Exit    : All enemies updated and drawn for this frame.
+; Modifies: CX, DI (restored).
+; =============================================================================
+proc HandleAllEnemies
+    push cx
+    push di
+
+    mov cx, [EnemyCtxCount]       ; number of enemies to process
+    mov di, offset EnemyCtxTable  ; DI = pointer to first context entry
+
+@@loop:
+    cmp cx, 0
+    je @@ret
+
+    push di                        ; pass context record offset to HandleOneEnemy
+    call HandleOneEnemy            ; ret 2
+
+    add di, CTX_SIZE               ; advance to next context entry
+    dec cx
+    jmp @@loop
+
+@@ret:
+    pop di
+    pop cx
+    ret
+endp HandleAllEnemies
 
 ; =============================================================================
 ; PROC TickMusic
@@ -5002,6 +6417,13 @@ exit:
 proc TickMusic
     push ax
     push bx
+	
+	cmp [byte ptr musicOn], 0
+	je @@ret
+	
+	; Don't tick music if shoot sound is still playing
+    cmp [ShootSoundTimer], 0
+    jne @@ret
 
     mov bx, [current_note_index]
     shl bx, 2                   ; *4
@@ -5029,26 +6451,26 @@ proc TickMusic
     ret
 endp TickMusic
 
-; =============================================================================
-; PROC TickMusic
-; -----------------------------------------------------------------------------
-; Purpose : Advance the background music by one tick.
-;           Checks whether the current note has played long enough; if so,
-;           moves to the next note and calls PlayTone.
+; ==============================================================================
+; PROC ResetMissile
 ;
-; Entry   : music_data    - array of (frequency, duration) word pairs
-;           current_note_index - index of the currently playing note
-;           note_timer    - frames elapsed since current note started
+; Purpose: Resets the missile's state flags and timers. Restores its base 
+;              3D model coordinates (X, Y, Z) from a backup array 
+;              (Missile_XXXS_TO_COPY). Randomizes the starting X and Y positions 
+;              and synchronizes the missile data.
 ;
-; Exit    : current_note_index and note_timer updated.
-;           PlayTone called when a note transition occurs.
+; Entry:     Missile Sprites (from inside proc)
 ;
-; Modifies: (none - all registers preserved via push/pop)
-; =============================================================================
+; Exit:      Missile_XXXS array is overwritten and shifted to a random location.
+;
+; Modifies:   None.
+; ==============================================================================
 proc ResetMissile
     push ax
 	push si 
 	push di 
+	push bx 
+	push dx
 
     ; Reset all missile state flags
     mov [isMissileActive], 0
@@ -5116,6 +6538,8 @@ proc ResetMissile
 
     call SyncAllMissiles
 	
+	pop dx 
+	pop bx
 	pop di 
 	pop si
     pop ax
@@ -5243,7 +6667,7 @@ proc LaunchMissile
 	call ExplodeMissile
 	jmp @@ret
 @@killPlane:
-	call GameOverProc
+	call crash
 	jmp @@ret 
 @@enemyToReturn:
 	call ResetMissile
@@ -5294,7 +6718,7 @@ proc CheckMissileHitPlayer
     mov bx, [di+2]              ; missile pixel Y
 
     ; Check X overlap with player: 115 <= x <= 198
-    cmp ax, 135
+    cmp ax, 125
     jl @@next
     cmp ax, 198
     jg @@next
@@ -5991,7 +7415,7 @@ proc GetCX
     
     mov [CxSizeTimerMissile], 0
     cmp [cxMODEMissile], 40
-    jg @@calc                     ; don't increment past 20
+    jg @@calc                     ; don't increment past 40
     inc [cxMODEMissile]
 @@calc:
     xor cx, cx
@@ -6234,14 +7658,18 @@ endp HandleGuns
 ; =============================================================================
 proc HandleShootSound
     cmp [ShootSoundTimer], 0
-    je @@ret
+    je @@musicBackOn
 
+	
     mov ax, [ShootSoundFreq]
     call SpeakerOn
 
     add [ShootSoundFreq], 200   ; 3072 steps / 15 frames = ~200 per frame
     dec [ShootSoundTimer]
+	jmp @@ret
+	
 
+@@musicBackOn:
 
 @@ret:
     ret
@@ -6351,71 +7779,6 @@ proc ResetBulletCoords
 	ret
 endp ResetBulletCoords
 
-; =============================================================================
-; PROC KillEnemy
-; -----------------------------------------------------------------------------
-; Purpose : Animate the death of Enemy 1 in two stages:
-;           Stage 1 – show a small explosion BMP (E_ES.bmp) at the enemy
-;                     position for 5 frames.
-;           Stage 2 – show a large explosion BMP (E_EB.bmp); move the enemy
-;                     sprite downward 6 pixels per frame simulating it
-;                     falling, until Y > 170 at which point carry is set
-;                     to signal the caller that the kill sequence is done.
-;
-; Entry   : EnemyX / EnemyY – screen position of the dead enemy.
-;           StageOneEnemyExplosionComplete – 0 = still in stage 1, 1 = stage 2.
-;           WaitForEnemyExp2 – frame counter for stage 1.
-;
-; Exit    : Carry set  = explosion finished (enemy fell off screen).
-;           Carry clear = explosion still running.
-;           EnemyY incremented by 6 each stage-2 frame.
-;           StageOneEnemyExplosionComplete set to 1 after 5 stage-1 frames.
-;
-; =============================================================================
-proc KillEnemy
-	
-	
-	mov ax, [EnemyX]
-	mov bx, [EnemyY]
-	
-	cmp [byte ptr StageOneEnemyExplosionComplete], 1
-	je @@BigExplosion
-
-	; show e_es at enemy 
-	mov [bmpWidth], 48
-	MOV [BmpHeight], 31
-	mov [BmpTop], bx
-	mov [bmpLeft], ax 
-	mov [FileNamePtr], offset Enemy_ExplosionSmall
-	call OpenShowBmp
-	
-	; wait half sec 
-	; wait...
-	inc [WaitForEnemyExp2]
-	cmp [WaitForEnemyExp2], 5
-	clc
-	jnge @@ret
-	
-	mov [byte ptr StageOneEnemyExplosionComplete], 1
-	
-@@BigExplosion:
-	; show e_eb at enemy and falling down 
-	mov [bmpWidth], 49
-	MOV [BmpHeight], 39
-	mov [BmpTop], bx
-	mov [bmpLeft], ax 
-	mov [FileNamePtr], offset Enemy_ExplosionBig
-	call OpenShowBmp
-	; enemey moves down from HandleEnemy
-	add [EnemyY], 6
-	cmp [EnemyY], 170 
-	clc 
-	jnge @@ret 
-	stc
-
-@@ret:
-	ret
-endp KillEnemy
 
 ; =============================================================================
 ; PROC CheckBulletCoords
@@ -6442,14 +7805,17 @@ proc CheckBulletCoords
 
     ; Check enemy 1
     mov si, offset EnemyNormal
+	cmp [EnemyDeadByFire], 1
+	je @@checkEnemy2
     call CheckBulletCoordsWithEnemySI
     jc @@hitEnemy1
 
+@@checkEnemy2:
     ; Check enemy 2
     cmp [Enemy2Active], 1
     jne @@checkEnemy3
-    cmp [isDead2], 1
-    je @@checkEnemy3
+	cmp [EnemyDeadByFire2], 1
+	je @@checkEnemy3
     mov si, offset Enemy2Normal
     call CheckBulletCoordsWithEnemySI
     jc @@hitEnemy2
@@ -6457,8 +7823,8 @@ proc CheckBulletCoords
 @@checkEnemy3:
     cmp [Enemy3Active], 1
     jne @@ret
-    cmp [isDead3], 1
-    je @@ret
+	cmp [EnemyDeadByFire3], 1
+	je @@ret
     mov si, offset Enemy3Normal
     call CheckBulletCoordsWithEnemySI
     jc @@hitEnemy3
@@ -6748,10 +8114,10 @@ proc HandleBulletMovement
     jmp @@ret
 
 @@move:
-    push -2
-    push -1
+    push -2    ; deltaY = -2
+    push -2   
     call AddXYToBulletsLines
-	jmp @@ret
+    jmp @@ret
 
 @@endBullet:
     mov [byte ptr BulletActive], 0
@@ -6773,15 +8139,11 @@ endp HandleBulletMovement
 ;
 ; =============================================================================
 proc SmallerInPlace
-
-	add [BulletLines_generalZ], 15
-
-	push -1
-    push -1
-    call AddXYToBulletsLines	
-	
-
-	ret
+    add [BulletLines_generalZ], 15
+    push -1    ; deltaY = -1
+    push -1     ; deltaX = 0   was -1
+    call AddXYToBulletsLines
+    ret
 endp SmallerInPlace
 
 ; =============================================================================
@@ -6802,7 +8164,7 @@ proc AddXYToBulletsLines
     mov bp, sp 
     push ax 
 
-    ; LEFT gun - apply X delta normally
+    ; RIGHT gun - apply X delta normally
     mov ax, [bp+4] 
     add [BulletLine1_X0], ax 
     add [BulletLine1_X1], ax 
@@ -6813,16 +8175,7 @@ proc AddXYToBulletsLines
     add [BulletLine4_X0], ax 
     add [BulletLine4_X1], ax 
 
-    ; RIGHT gun - apply NEGATED X delta (moves opposite direction)
-    neg ax
-    add [BulletLine1R_X0], ax
-    add [BulletLine1R_X1], ax
-    add [BulletLine2R_X0], ax
-    add [BulletLine2R_X1], ax
-    add [BulletLine3R_X0], ax
-    add [BulletLine3R_X1], ax
-    add [BulletLine4R_X0], ax
-    add [BulletLine4R_X1], ax
+
 
     ; Y delta applies the same to both
     mov ax, [bp+6] 
@@ -7071,7 +8424,8 @@ endp loadGunsCrosshair
 ; =============================================================================
 proc playStartCutscene 
 	push dx
-	
+		
+	mov [shouldCheckSkip], 0
 	mov [cutScenePlayed], 1
 	
 	mov dx, offset FileLoadngPlay1Bmp
@@ -7116,11 +8470,14 @@ proc playStartCutscene
 	
 	push offset InstFile3
 	call PlaySong
-	
+@@runwayCutscenePart:
+	mov [shouldCheckSkip], 1
 	call PlayRunwayCutscene
 	jmp @@ret
 
 @@exitError:
+	mov [shouldCheckSkip], 1
+
     mov dx, offset BmpFileErrorMsg
     mov ah, 9
     int 21h
@@ -7145,30 +8502,202 @@ endp playStartCutscene
 ;
 ; =============================================================================
 proc PlayRunwayCutscene
-	
-	call fillAround
-	mov dx, offset AircraftRunwayBmp
-	mov [fileNamePtr], dx
-	mov [bmpWidth], 112 
-	mov [BmpHeight], 70
-	mov [BmpTop], 120
-	mov [BmpLeft], 100
-	call OpenShowBmp
-	call TransitionBuffer
-		
-		
-	; in futere develpoment: here ill show the player plane getting smaller as moves
-	; up the runway
-	call _400MiliSecDelay
-	call _400MiliSecDelay
-	call _400MiliSecDelay
-	call _400MiliSecDelay
-	
-	
 
+    ; --- init animation state ---
+    mov [RunwayPlaneY],   168
+    mov [RunwayPlaneX],   137
+    mov [RunwayStage],    0
+    mov [RunwayFrameCnt], 0
+	mov [runwayAdvancePerTick],3
 
-	ret
+@@animLoop:
+	call TickMusic
+    ; --- redraw background every frame ---
+    call fillAround
+	call DrawGrassLines
+    call FillSky
+
+    mov dx, offset AircraftRunwayBmp
+    mov [FileNamePtr], dx
+    mov [BmpLeft],   63
+    mov [BmpTop],    90
+    mov [BmpWidth],  180
+    mov [BmpHeight],  112
+    call OpenShowBmp
+
+    ; --- pick BMP / dimensions for current stage ---
+    cmp [RunwayStage], 0
+    je @@stageL
+    cmp [RunwayStage], 1
+    je @@stageM
+    cmp [RunwayStage], 2
+    je @@stageS
+    cmp [RunwayStage], 3
+    je @@stageXS
+    jmp @@allDone       ; stage 4 = finished
+
+@@stageL:
+    mov dx, offset PlaneRunwayL
+    mov [BmpWidth],  41
+    mov [BmpHeight], 16
+    jmp @@drawPlane
+
+@@stageM:
+    mov dx, offset PlaneRunwayM
+    mov [BmpWidth],  33
+    mov [BmpHeight], 13
+	mov [runwayAdvancePerTick], 2
+    jmp @@drawPlane
+
+@@stageS:
+    mov dx, offset PlaneRunwayS
+    mov [BmpWidth],  28
+    mov [BmpHeight], 11
+
+    jmp @@drawPlane
+
+@@stageXS:
+    mov dx, offset PlaneRunwayXS
+    mov [BmpWidth],  24
+    mov [BmpHeight], 9
+	dec [RunwayPlaneY]
+
+	
+@@drawPlane:
+    mov [FileNamePtr], dx
+    mov ax, [RunwayPlaneY]
+    mov [BmpTop],  ax
+    mov ax, [RunwayPlaneX]
+    mov [BmpLeft], ax
+    call OpenShowBmp
+
+    call TransitionBuffer
+
+    ; --- advance Y (move upward = decrement Y) ---
+	xor ah,ah
+	mov al, [runwayAdvancePerTick]
+    sub [RunwayPlaneY],ax
+
+    ; --- check stage transition ---
+    inc [RunwayFrameCnt]
+
+    cmp [RunwayStage], 0
+    jne @@checkM
+    cmp [RunwayFrameCnt], 8
+    jl @@animLoop
+    ; transition L -> M
+    mov [RunwayPlaneX],   140
+    mov [RunwayFrameCnt], 0
+    inc [RunwayStage]
+    jmp @@animLoop
+
+@@checkM:
+    cmp [RunwayStage], 1
+    jne @@checkS
+    cmp [RunwayFrameCnt], 8
+    jl @@animLoop
+    ; transition M -> S
+	dec [runwayAdvancePerTick]
+    mov [RunwayPlaneX],   143
+    mov [RunwayFrameCnt], 0
+    inc [RunwayStage]
+    jmp @@animLoop
+
+@@checkS:
+    cmp [RunwayStage], 2
+    jne @@checkXS
+    cmp [RunwayFrameCnt], 6
+    jl @@animLoop
+    ; transition S -> XS
+	dec [runwayAdvancePerTick]
+    mov [RunwayPlaneX],   145
+    mov [RunwayFrameCnt], 0
+    inc [RunwayStage]
+    jmp @@animLoop
+
+@@checkXS:
+    cmp [RunwayStage], 3
+    jne @@animLoop
+    cmp [RunwayFrameCnt], 5
+    jl @@animLoop
+    ; plane gone
+    inc [RunwayStage]       ; stage = 4 = done
+    jmp @@animLoop
+	
+@@allDone:
+    xor cx, cx
+	
+	mov dx, offset PlaneRunwayXS
+	mov [FileNamePtr], dx
+    mov ax, [RunwayPlaneY]
+    mov [BmpTop],  ax
+    mov ax, [RunwayPlaneX]
+    mov [BmpLeft], ax
+    mov [BmpWidth],  24
+    mov [BmpHeight], 9
+@@riseLoop:
+    inc cx
+    
+    cmp cx, 20
+    jl @@setSmall      
+
+    cmp cx, 40
+    jl @@setMedium     
+
+@@setLarge:
+    mov [FileNamePtr], offset PlaneRunwayL
+
+    mov [RunwayPlaneX], 135 
+    mov [BmpWidth],  41
+    mov [BmpHeight], 16
+    
+    mov ax, [RunwayPlaneY]
+    sub ax, 5               
+    jmp @@drawIt
+
+@@setMedium:
+    mov [FileNamePtr], offset PlaneRunwayM
+    mov [RunwayPlaneX], 139 
+    mov [BmpWidth],  33
+    mov [BmpHeight], 13
+    
+    mov ax, [RunwayPlaneY]
+    sub ax, 2               
+    jmp @@drawIt
+
+@@setSmall:
+    mov [FileNamePtr], offset PlaneRunwayS
+    mov [RunwayPlaneX], 142 
+    mov [BmpWidth],  28
+    mov [BmpHeight], 11
+    
+    mov ax, [RunwayPlaneY]  
+
+@@drawIt:
+    mov [BmpTop], ax       
+
+    push cx                
+    
+    call fillAround
+    call DrawGrassLines
+    call FillSky
+    
+    mov ax, [RunwayPlaneX]
+    mov [BmpLeft], ax      
+    
+    call OpenShowBmp
+    call TransitionBuffer
+
+    pop cx                  
+
+    add [horizonLine], 1
+    cmp [horizonLine], 110
+    jne @@riseLoop
+
+@@ret:
+    ret
 endp PlayRunwayCutscene
+
 
 ; =============================================================================
 ; PROC DrawFromPixelArray
@@ -7259,1472 +8788,6 @@ proc DrawFromPixelArray
 	ret 2
 endp DrawFromPixelArray
 
-; ============================================================
-; HandleEnemy2 - same logic as HandleEnemy but uses Enemy2 state
-; ============================================================
-proc HandleEnemy2
-	push cx
-
-	cmp [Enemy2Active], 1
-	je @@dontWait 
-	jmp @@waitDelay
-@@dontWait:
-	cmp [enemyLeft2], 1
-	jne @@regular
-	mov [DisappearNow2], 0
-	inc [enemyLeftTimer2]
-	cmp [enemyLeftTimer2], 70
-	jnge @@regular
-	mov [DisappearNow2], 1
-@@regular:
-    cmp [EnemyDeadByFire2], 1
-	jne @@checkDeadDisappear
-	jmp @@ShowEnemyExploding
-@@checkDeadDisappear:
-    cmp [isDead2], 1
-    jne @@alreadyExists
-    jmp @@MakeNewEnemy
-@@alreadyExists:
-	cmp [DisappearNow2], 1
-	je @@startDisappear
-	mov di, offset Enemy2Normal
-
-@@normal:
-	push di
-	push 147
-	mov bl, 10
-	mov dl, 30
-	call RandomByCsW
-	mov [Xval], ax 
-	mov bx, [horizonLine]
-	sub bx, ax 
-	push bx 
-	call MoveEnemy2ToBoundry
-	push di
-	call DrawFromPixelArray
-@@checkDisappear:
-	clc
-	push 147
-	mov ax, [Xval]
-	mov bx, [horizonLine]
-	sub bx, ax 
-	push bx
-	call WaitToDisappear2
-	jc @@continueRegular
-	jmp @@ret
-@@continueRegular:
-	mov [DisappearNow2], 1
-	jmp @@ret
-@@startDisappear:
-	call EnemyDisappearStep2
-	cmp [isDead2], 1
-	jne @@continueDisappear
-	jmp @@ret 
-@@continueDisappear:
-	push di
-	;cmp [isLeft], 0
-	;;je @@left
-	cmp [enemyLeft2], 1
-	jne @@moveRight 
-@@moveLeft:
-	push offset Enemy2Normal
-	push 339
-	push 20
-	call MoveEnemy2ToBoundry
-	jmp @@skip
-@@moveRight:
-	push offset Enemy2Normal
-	push 20
-	push 20
-	call MoveEnemy2ToBoundry
-;	jmp @@skip
-;@@left:
-;	push offset EnemyNormal
-;	push 180
-;	push 20
-;	call MoveEnemyToBoundry
-@@skip:
-	call SyncAllEnemies2
-	pop di
-	push di
-	call DrawFromPixelArray
-	jmp @@ret
-
-@@ShowEnemyExploding:
-	; simple: use KillEnemy but with Enemy2 coords
-	; we reuse KillEnemy by temporarily copying EnemyX/Y
-	push [EnemyX2]
-	push [EnemyY2]
-	pop [EnemyY]
-	pop [EnemyX]
-	call KillEnemy
-	push [EnemyX]
-	push [EnemyY]
-	pop [EnemyY2]
-	pop [EnemyX2]
-	jnc @@ret
-	mov [isExploded2], 1
-
-@@MakeNewEnemy:
-    mov [EnemyDeadByFire2], 0
-    mov [isExploded2], 0
-    mov [StageOneEnemyExplosionComplete2], 0
-    mov [WaitForEnemyExp2_2], 0
-    mov [isDead2], 0
-	mov [normalLeftTImer2], 0
-	mov [enemyLeftTimer2], 0
-	mov [enemyLeft2], 0
-	mov [Enemy2Active], 0
-	mov [Enemy2DelayTimer], 0
-    call resetVariabels2
-    call SpawnEnemy2OnRandomCorner
-
-@@waitDelay:
-	; not active yet - count frames
-	inc [Enemy2DelayTimer]
-	cmp [Enemy2DelayTimer], 30    ; 1 second at 30fps
-	jl @@ret
-	; activate
-	mov [Enemy2Active], 1
-	mov [Enemy2DelayTimer], 0
-	call resetVariabels2
-	call SpawnEnemy2OnRandomCorner
-
-@@ret:
-	pop cx
-	ret
-endp HandleEnemy2
-
-; ============================================================
-; HandleEnemy3 - same logic, uses Enemy3 state
-; ============================================================
-proc HandleEnemy3
-	push cx
-
-	cmp [Enemy3Active], 1
-	je @@dontWait
-	jmp @@waitDelay
-@@dontWait:
-	cmp [enemyLeft3], 1
-	jne @@regular
-	mov [DisappearNow3], 0
-	inc [enemyLeftTimer3]
-	cmp [enemyLeftTimer3], 70
-	jnge @@regular
-	mov [DisappearNow3], 1
-@@regular:
-    cmp [EnemyDeadByFire3], 1
-	jne @@checkDeadDisappear
-	jmp @@ShowEnemyExploding
-@@checkDeadDisappear:
-    cmp [isDead3], 1
-    jne @@alreadyExists
-    jmp @@MakeNewEnemy
-@@alreadyExists:
-	cmp [DisappearNow3], 1
-	je @@startDisappear
-	mov di, offset Enemy3Normal
-
-@@normal:
-	push di
-	push 147
-	mov bl, 40
-	mov dl, 100
-	call RandomByCsW
-	mov [Xval], ax
-	mov bx, [horizonLine]
-	sub bx, ax 
-	push bx 	
-	call MoveEnemy3ToBoundry
-	push di
-	call DrawFromPixelArray
-@@checkDisappear3:
-	clc
-	push 147
-	mov ax, [Xval]
-	mov bx, [horizonLine]
-	sub bx, ax 
-	push bx 
-	call WaitToDisappear3
-	jc @@continueRegular
-	jmp @@ret
-@@continueRegular:
-	mov [DisappearNow3], 1
-	jmp @@ret
-@@startDisappear:
-	call EnemyDisappearStep3
-	cmp [isDead3], 1
-	jne @@continueDisappear
-	jmp @@ret
-@@continueDisappear:
-    push di
-    cmp [enemyLeft3], 1
-    jne @@moveRight
-@@moveLeft:
-    push offset Enemy3Normal
-    push 339
-    push 20
-    call MoveEnemy3ToBoundry
-    jmp @@skip
-@@moveRight:
-    push offset Enemy3Normal
-    push 20
-    push 20
-    call MoveEnemy3ToBoundry
-@@skip:
-    call SyncAllEnemies3
-    pop di
-    push di
-    call DrawFromPixelArray
-    jmp @@ret
-
-@@ShowEnemyExploding:
-	push [EnemyX3]
-	push [EnemyY3]
-	pop [EnemyY]
-	pop [EnemyX]
-	call KillEnemy
-	push [EnemyX]
-	push [EnemyY]
-	pop [EnemyY3]
-	pop [EnemyX3]
-	jnc @@ret
-	mov [isExploded3], 1
-
-@@MakeNewEnemy:
-    mov [EnemyDeadByFire3], 0
-    mov [isExploded3], 0
-    mov [StageOneEnemyExplosionComplete3], 0
-    mov [WaitForEnemyExp2_3], 0
-    mov [isDead3], 0
-	mov [normalLeftTImer3], 0
-	mov [enemyLeftTimer3], 0
-	mov [enemyLeft3], 0
-	mov [Enemy3Active], 0
-	mov [Enemy3DelayTimer], 0
-    call resetVariabels3
-    call SpawnEnemy3OnRandomCorner
-
-@@waitDelay:
-	inc [Enemy3DelayTimer]
-	cmp [Enemy3DelayTimer], 60    ; 2 seconds at 30fps
-	jl @@ret
-	mov [Enemy3Active], 1
-	mov [Enemy3DelayTimer], 0
-	call resetVariabels3
-	call SpawnEnemy3OnRandomCorner
-
-@@ret:
-	pop cx
-	ret
-endp HandleEnemy3
-
-; ============================================================
-proc MoveEnemy2ToBoundry
-	push bp
-	mov bp, sp
-	push cx
-	push dx
-
-	mov dx, [bp+4]
-	mov cx, [bp+6]
-	mov di, [bp+8]
-
-	shl [EnemyStayAtPlaceTimer2], 8
-	jnc @@checkX2
-	mov [EnemyStayAtPlaceTimer2], 1
-
-@@checkY2:
-	cmp [di+2], dx
-	je @@checkBoth2
-	jl @@moreY2
-@@lessY2:
-	push di
-	push 2
-	push -1
-	call AddXToOffsetInArray
-	jmp @@checkX2
-@@moreY2:
-	push di
-	push 2
-	push 1
-	call AddXToOffsetInArray
-	jmp @@checkX2
-@@checkBoth2:
-	mov ax, cx
-	sub ax, [di]
-	cmp ax, -10
-	jl @@checkX2
-	cmp ax, 10
-	jg @@checkX2
-	jmp @@bothEqual2
-@@checkX2:
-	mov bx, 2
-	mov dx, 3
-	call RandomByCsW
-	cmp [cxMODE2], 2
-	jng @@continue2
-	mov ax, 1
-@@continue2:
-	cmp [di], cx
-	je @@ret2
-	jl @@moreX2
-@@lessX2:
-	push di
-	push 0
-	neg ax
-	push ax
-	call AddXToOffsetInArray
-	mov [isLeft2], 1
-	jmp @@ret2
-@@moreX2:
-	push di
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	mov [isLeft2], 0
-	jmp @@ret2
-@@bothEqual2:
-	mov [isForawrd2], 1
-@@ret2:
-	pop dx
-	pop cx
-	pop bp
-	ret 6
-endp MoveEnemy2ToBoundry
-
-proc MoveEnemy3ToBoundry
-	push bp
-	mov bp, sp
-	push cx
-	push dx
-
-	mov dx, [bp+4]
-	mov cx, [bp+6]
-	mov di, [bp+8]
-
-	shl [EnemyStayAtPlaceTimer3], 8
-	jnc @@checkX3
-	mov [EnemyStayAtPlaceTimer3], 1
-
-@@checkY3:
-	cmp [di+2], dx
-	je @@checkBoth3
-	jl @@moreY3
-@@lessY3:
-	push di
-	push 2
-	push -1
-	call AddXToOffsetInArray
-	jmp @@checkX3
-@@moreY3:
-	push di
-	push 2
-	push 1
-	call AddXToOffsetInArray
-	jmp @@checkX3
-@@checkBoth3:
-	mov ax, cx
-	sub ax, [di]
-	cmp ax, -10
-	jl @@checkX3
-	cmp ax, 10
-	jg @@checkX3
-	jmp @@bothEqual3
-@@checkX3:
-	mov bx, 2
-	mov dx, 3
-	call RandomByCsW
-	cmp [cxMODE3], 2
-	jng @@continue3
-	mov ax, 1
-@@continue3:
-	cmp [di], cx
-	je @@ret3
-	jl @@moreX3
-@@lessX3:
-	push di
-	push 0
-	neg ax
-	push ax
-	call AddXToOffsetInArray
-	mov [isLeft3], 1
-	jmp @@ret3
-@@moreX3:
-	push di
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	mov [isLeft3], 0
-	jmp @@ret3
-@@bothEqual3:
-	mov [isForawrd3], 1
-@@ret3:
-	pop dx
-	pop cx
-	pop bp
-	ret 6
-endp MoveEnemy3ToBoundry
-
-proc WaitToDisappear2
-	push bp
-	mov bp, sp
-	push ax
-	push bx
-
-	clc
-	mov ax, [bp+6]
-	mov bx, [bp+4]
-	mov di, offset Enemy2Normal
-	mov cx, [di]
-	sub cx, ax
-	cmp cx, -4
-	jl @@ret2
-	cmp cx, 4
-	jg @@ret2
-	mov cx, [di+2]
-	sub cx, bx
-	cmp cx, -4
-	jl @@ret2
-	cmp cx, 4
-	jg @@ret2
-	mov [DisappearNow2], 1
-	stc
-@@ret2:
-	pop bx
-	pop ax
-	pop bp
-	ret 4
-endp WaitToDisappear2
-
-proc WaitToDisappear3
-	push bp
-	mov bp, sp
-	push ax
-	push bx
-
-	clc
-	mov ax, [bp+6]
-	mov bx, [bp+4]
-	mov di, offset Enemy3Normal
-	mov cx, [di]
-	sub cx, ax
-	cmp cx, -4
-	jl @@ret3
-	cmp cx, 4
-	jg @@ret3
-	mov cx, [di+2]
-	sub cx, bx
-	cmp cx, -4
-	jl @@ret3
-	cmp cx, 4
-	jg @@ret3
-	mov [DisappearNow3], 1
-	stc
-@@ret3:
-	pop bx
-	pop ax
-	pop bp
-	ret 4
-endp WaitToDisappear3
-
-proc EnemyDisappearStep2
-    push ax
-    push bx
-    push cx
-
-    call SetCXbyTime2
-
-    cmp cx, 100
-    jnle @@close2
-    mov di, offset Enemy2Normal
-    jmp @@ret2
-@@close2:
-    cmp cx, 200
-    jnle @@middle2
-    mov di, offset EnemyClose2     
-    jmp @@ret2
-@@middle2:
-    cmp cx, 300
-    jnle @@far2
-    mov di, offset EnemyMiddle2    
-    jmp @@ret2
-@@far2:
-    cmp cx, 400
-    jnle @@isDead2
-    mov di, offset EnemyFar2        
-    jmp @@ret2
-@@isDead2:
-    mov [isDead2], 1
-
-@@ret2:
-    pop cx
-    pop bx
-    pop ax
-    ret
-endp EnemyDisappearStep2
-
-proc EnemyDisappearStep3
-    push ax
-    push bx
-    push cx
-
-    call SetCXbyTime3
-
-    cmp cx, 100
-    jnle @@close3
-    mov di, offset Enemy3Normal
-    jmp @@ret3
-@@close3:
-    cmp cx, 200
-    jnle @@middle3
-    mov di, offset EnemyClose3
-    jmp @@ret3
-@@middle3:
-    cmp cx, 300
-    jnle @@far3
-    mov di, offset EnemyMiddle3
-    jmp @@ret3
-@@far3:
-    cmp cx, 400
-    jnle @@isDead3
-    mov di, offset EnemyFar3
-    jmp @@ret3
-@@isDead3:
-    mov [isDead3], 1
-@@ret3:
-    pop cx
-    pop bx
-    pop ax
-    ret
-endp EnemyDisappearStep3
-
-proc SyncAllEnemies2
-    push di
-
-
-
-	mov si, offset EnemyClose2
-	mov di, offset Enemy2Normal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyClose2
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyClose2
-	push 2
-	push ax
-	call AddXToOffsetInArray
-
-	mov si, offset EnemyMiddle2
-	mov di, offset Enemy2Normal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyMiddle2
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyMiddle2
-	push 2
-	push ax
-	call AddXToOffsetInArray
-
-	mov si, offset EnemyFar2
-	mov di, offset Enemy2Normal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyFar2
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyFar2
-	push 2
-	push ax
-	call AddXToOffsetInArray
-	
-	
-
-    pop di
-    ret
-endp SyncAllEnemies2
-
-proc SyncAllEnemies3
-    push di
-
-
-
-	mov si, offset EnemyClose3
-	mov di, offset Enemy3Normal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyClose3
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyClose3
-	push 2
-	push ax
-	call AddXToOffsetInArray
-
-	mov si, offset EnemyMiddle3
-	mov di, offset Enemy3Normal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyMiddle3
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyMiddle3
-	push 2
-	push ax
-	call AddXToOffsetInArray
-
-	mov si, offset EnemyFar3
-	mov di, offset Enemy3Normal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyFar3
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyFar3
-	push 2
-	push ax
-	call AddXToOffsetInArray
-	
-    pop di
-    ret
-endp SyncAllEnemies3
-
-proc SetCXbyTime2
-	shl [CxSizeTimer2], 1
-	jnc @@calc2
-	cmp [cxMODE2], 4
-	jg @@ret2
-	inc [cxMODE2]
-	mov [CxSizeTimer2], 1
-@@calc2:
-	xor cx, cx
-	mov ax, [cxMODE2]
-	mov bx, 100
-	mul bx
-	add cx, ax
-@@ret2:
-	ret
-endp SetCXbyTime2
-
-proc SetCXbyTime3
-	shl [CxSizeTimer3], 1
-	jnc @@calc3
-	cmp [cxMODE3], 4
-	jg @@ret3
-	inc [cxMODE3]
-	mov [CxSizeTimer3], 1
-@@calc3:
-	xor cx, cx
-	mov ax, [cxMODE3]
-	mov bx, 100
-	mul bx
-	add cx, ax
-@@ret3:
-	ret
-endp SetCXbyTime3
-
-proc resetVariabels2
-	push di
-	call setPosToFixedArray2
-	mov [disappearLevel2], 0
-	mov [DisappearNow2], 0
-	mov [cxMODE2], 0
-	mov [CxSizeTimer2], 1
-	pop di
-	ret
-endp resetVariabels2
-
-proc resetVariabels3
-	push di
-	call setPosToFixedArray3
-	mov [disappearLevel3], 0
-	mov [DisappearNow3], 0
-	mov [cxMODE3], 0
-	mov [CxSizeTimer3], 1
-	pop di
-	ret
-endp resetVariabels3
-
-proc setPosToFixedArray2
-	push si
-	push di
-	push ax
-	mov si, offset Enemy2NormalFixed
-	mov di, offset Enemy2Normal
-@@loop2:
-	cmp [word ptr si], 0
-	jne @@ok2
-	cmp [word ptr si+2], 0
-	jne @@ok2
-	cmp [word ptr si+4], 0
-	je @@ret2
-@@ok2:
-	mov ax, [si]
-	mov [di], ax
-	mov ax, [si+2]
-	mov [di+2], ax
-	mov ax, [si+4]
-	mov [di+4], ax
-	add si, 6
-	add di, 6
-	jmp @@loop2
-@@ret2:
-	pop ax
-	pop di
-	pop si
-	ret
-endp setPosToFixedArray2
-
-proc setPosToFixedArray3
-	push si
-	push di
-	push ax
-	mov si, offset Enemy3NormalFixed
-	mov di, offset Enemy3Normal
-@@loop3:
-	cmp [word ptr si], 0
-	jne @@ok3
-	cmp [word ptr si+2], 0
-	jne @@ok3
-	cmp [word ptr si+4], 0
-	je @@ret3
-@@ok3:
-	mov ax, [si]
-	mov [di], ax
-	mov ax, [si+2]
-	mov [di+2], ax
-	mov ax, [si+4]
-	mov [di+4], ax
-	add si, 6
-	add di, 6
-	jmp @@loop3
-@@ret3:
-	pop ax
-	pop di
-	pop si
-	ret
-endp setPosToFixedArray3
-
-proc SpawnEnemy2OnRandomCorner
-	push ax
-	push bx
-	push dx
-	push cx
-
-	push offset Enemy2Normal
-	push 2
-	push 140
-	call AddXToOffsetInArray
-
-	mov bx, 0
-	mov dx, 1
-	call RandomByCsW
-
-	cmp ax, 0
-	je @@isRight2
-	mov [enemyLeft2], 1
-	jmp @@ret2
-
-@@isRight2:
-	mov ax, 269
-	push offset Enemy2Normal
-	push 0
-	push ax
-	call AddXToOffsetInArray
-
-@@ret2:
-	pop cx
-	pop dx
-	pop bx
-	pop ax
-	ret
-endp SpawnEnemy2OnRandomCorner
-
-proc SpawnEnemy3OnRandomCorner
-	push ax
-	push bx
-	push dx
-	push cx
-
-	push offset Enemy3Normal
-	push 2
-	push 140
-	call AddXToOffsetInArray
-
-	mov bx, 0
-	mov dx, 1
-	call RandomByCsW
-
-	cmp ax, 0
-	je @@isRight3
-	mov [enemyLeft3], 1
-	jmp @@ret3
-
-@@isRight3:
-	mov ax, 269
-	push offset Enemy3Normal
-	push 0
-	push ax
-	call AddXToOffsetInArray
-
-@@ret3:
-	pop cx
-	pop dx
-	pop bx
-	pop ax
-	ret
-endp SpawnEnemy3OnRandomCorner
-
-
-
-; =============================================================================
-; PROC HandleEnemy
-; -----------------------------------------------------------------------------
-; Purpose : Per-frame handler for Enemy 1. Futere being for all.
-;           Manages the full enemy lifecycle: left-side timer, fire-death,
-;           normal flight, disappear trigger, shrink animation, and respawn.
-;
-; Entry   : enemyLeft        - 1 if enemy spawned on the left side.
-;           enemyLeftTimer   - frames elapsed since left-side spawn.
-;           EnemyDeadByFire  - 1 if enemy was shot by the player.
-;           isDead           - 1 if enemy has finished its death sequence.
-;           DisappearNow     - 1 if shrink/disappear sequence should run.
-;           horizonLine      - current horizon Y coordinate.
-;
-; Exit    : Enemy drawn or removed from screen.
-;           isDead, enemyLeft, enemyLeftTimer, DisappearNow updated as needed.
-;           On respawn: all Enemy 1 state variables reset,
-;           new position assigned via SpawnEnemyOnRandomCorner.
-;
-; Arbitrary numbers explained:
-;   70  - A number fitting until the enemy should disappear, allows for speed to match right.
-;   147 - target X before triggering Disappear.
-;   20  - target Y before triggering Disappear.
-;   339 - target X before triggering Disappear (For Left).
-; =============================================================================
-proc HandleEnemy
-	push cx
-	
-	cmp [enemyLeft], 1
-	jne @@regular
-	mov [DisappearNow], 0
-	inc [enemyLeftTimer]
-	cmp [enemyLeftTimer], 70
-	jnge @@regular 
-	mov [DisappearNow], 1
-@@regular:
-    cmp [EnemyDeadByFire], 1
-	jne @@checkDeadDisappear
-	jmp @@ShowEnemyExploding
-@@checkDeadDisappear:
-    cmp [isDead], 1
-    jne @@alreadyExists
-    jmp @@MakeNewEnemy
-@@alreadyExists:
-
-	cmp [DisappearNow], 1
-	je @@startDisappear
-	mov di, offset EnemyNormal
-
-	
-	
-@@normal:
-	push 0
-	push di
-	push 147
-	mov bl, 40
-	mov dl, 100
-	call RandomByCsW
-	mov [Xval], ax
-	mov bx, [horizonLine]
-	sub bx, ax 
-	push bx 
-	call MoveEnemyToBoundry
-	push di
-	call DrawFromPixelArray
-
-@@checkDisappear:
-	clc
-	push 147
-	mov ax, [Xval]
-	mov bx, [horizonLine]
-	sub bx, ax 
-	push bx 	
-	call WaitToDisappear
-	jc @@continueRegular
-	jmp @@ret
-@@continueRegular:
-	mov [DisappearNow], 1
-	jmp @@ret
-@@startDisappear:
-	call EnemyDisappearStep
-	cmp [isDead], 1
-	jne @@continueDisappear
-	jmp @@ret 
-@@continueDisappear:
-	push di
-	cmp [enemyLeft], 1
-	jne @@moveRight 
-@@moveLeft:
-	push 0
-	push offset EnemyNormal
-	push 339
-	push 20
-	call MoveEnemyToBoundry
-	jmp @@skip
-@@moveRight:
-	push 0 
-	push offset EnemyNormal
-	push 20
-	push 20
-	call MoveEnemyToBoundry
-
-@@skip:
-	call SyncAllEnemies
-	pop di
-	push di
-	call DrawFromPixelArray
-	jmp @@ret
-@@ShowEnemyExploding:
-	call KillEnemy
-	jc @@MakeNewEnemy
-	jmp @@ret
-@@MakeNewEnemy:
-    mov [EnemyDeadByFire], 0
-    mov [StageOneEnemyExplosionComplete], 0
-    mov [WaitForEnemyExp2], 0
-    mov [isDead], 0
-	mov [normalLeftTImer], 0
-	mov [enemyLeftTimer], 0
-	mov [enemyLeft], 0
-    call resetVariabels
-    call SpawnEnemyOnRandomCorner
-
-
-
-@@ret:
-	pop cx
-	ret
-endp HandleEnemy
-
-; =============================================================================
-; PROC SyncAllEnemies
-; -----------------------------------------------------------------------------
-; Purpose : After Enemy 1's Normal sprite is moved, move the same
-;           positional delta to the Close, Middle, and Far size sprite's array so
-;           all four sprites stay at the same relative screen location.
-;
-; Entry   : EnemyNormal[0]  - current X of the reference (normal-size) sprite.
-;           EnemyNormal[2]  - current Y of the reference sprite.
-;           EnemyClose, EnemyMiddle, EnemyFar - last-synced positions of the
-;           smaller variants (each is a pixel-triplet array).
-;
-; Exit    : EnemyClose, EnemyMiddle, EnemyFar X and Y fields shifted by the
-;           same delta that was applied to EnemyNormal since last sync.
-;           Registers Preserved.
-;
-; =============================================================================
-proc SyncAllEnemies
-	push di
-	push si
-	push ax 
-	push bx
-	
-	
-
-
-	mov si, offset EnemyClose
-	mov di, offset EnemyNormal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyClose
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyClose
-	push 2
-	push ax
-	call AddXToOffsetInArray
-
-	mov si, offset EnemyMiddle
-	mov di, offset EnemyNormal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyMiddle
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyMiddle
-	push 2
-	push ax
-	call AddXToOffsetInArray
-
-	mov si, offset EnemyFar
-	mov di, offset EnemyNormal
-	mov ax, [di]
-	
-	mov bx, [si]
-	
-	sub ax, bx
-	
-	push offset EnemyFar
-	push 0
-	push ax
-	call AddXToOffsetInArray
-	
-	mov ax, [di+2]
-	
-	mov bx, [si+2]
-	
-	sub ax, bx
-	
-	push offset EnemyFar
-	push 2
-	push ax
-	call AddXToOffsetInArray
-	
-	pop bx 
-	pop ax 
-	pop si
-	pop di
-	ret
-endp SyncAllEnemies
-
-; =============================================================================
-; PROC resetVariabels
-; -----------------------------------------------------------------------------
-; Purpose : Restore Enemy 1 to its canonical starting state ready for a
-;           fresh spawn.  Copies the fixed coordinate table back
-;           into the live EnemyNormal array, resets all animation counters, etc..
-;
-; Entry   : EnemyNormalFixed - read-only reference array with original coords.
-;
-; Exit    : EnemyNormal      - overwritten with EnemyNormalFixed fixed values.
-;			important related values like:
-;           disappearLevel   - 0 (no disappear frames consumed).
-;           DisappearNow     - 0 (disappear sequence not active).
-;           cxMODE           - 0 (size stage counter reset).
-;           CxSizeTimer      - 1 (shift-register timer reset to initial state).
-;
-; =============================================================================
-proc resetVariabels
-	call setPosToFixedArray
-	mov [disappearLevel], 0
-	mov [DisappearNow], 0
-	mov [cxMODE], 0
-	mov [CxSizeTimer], 1
-	mov [EnemyDeadByFire], 0
-    mov [StageOneEnemyExplosionComplete], 0
-    mov [WaitForEnemyExp2], 0
-    mov [isDead], 0
-	mov [normalLeftTImer], 0
-	mov [enemyLeftTimer], 0
-	mov [enemyLeft], 0
-	
-	ret
-endp resetVariabels
-
-; =============================================================================
-; PROC setPosToFixedArray
-; -----------------------------------------------------------------------------
-; Purpose : Copy every (X, Y, Color) triplet from EnemyNormalFixed into
-;           EnemyNormal, effectively restoring the sprite to its original
-;           design-time position.  Stops at the sentry '0, 0, 0'.
-;
-; Entry   : EnemyNormalFixed - source array of word triplets, terminated by
-;                              three consecutive zero words.
-;           EnemyNormal      - destination array of the same layout.
-;
-; Exit    : EnemyNormal contains an exact copy of EnemyNormalFixed up to and
-;           including the sentinel.
-;           SI, DI, AX preserved.
-;
-; Arbitrary numbers explained:
-;   6  - byte size of one pixel triplet (3 words x 2 bytes = 6 bytes);
-;        SI and DI are advanced by 6 after each copied entry.
-; =============================================================================
-proc setPosToFixedArray
-    push si 
-    push di
-    push ax
-    
-    mov si, offset EnemyNormalFixed
-    mov di, offset EnemyNormal
-    
-@@replaceWithFixed:
-    cmp [word ptr si], 0
-    jne @@ok
-    cmp [word ptr si+2], 0
-    jne @@ok
-    cmp [word ptr si+4], 0
-    je @@ret
-@@ok:
-    mov ax, [si]
-    mov [di], ax
-    mov ax, [si+2]
-    mov [di+2], ax
-    mov ax, [si+4]
-    mov [di+4], ax
-    add si, 6
-    add di, 6
-    jmp @@replaceWithFixed
-
-@@ret:
-    pop ax
-    pop di
-    pop si
-    ret
-endp setPosToFixedArray
-
-; =============================================================================
-; PROC EnemyDisappearStep
-; -----------------------------------------------------------------------------
-; Purpose : Each frame during Enemy 1's shrink sequence, select the correct
-;           size-variant sprite by reading the time-based CX counter, and
-;           load its offset into DI for the caller to draw.
-;           When CX exceeds 400 the enemy is marked dead.
-;
-; Entry   : cxMODE / CxSizeTimer - consumed by SetCXbyTime to produce CX.
-;
-; Exit    : DI = offset of the sprite to draw this frame:
-;             CX <= 100  EnemyNormal  (full size, still close)
-;             CX <= 200  EnemyClose   (slightly smaller)
-;             CX <= 300  EnemyMiddle  (medium distance)
-;             CX <= 400  EnemyFar     (small / far)
-;             CX >  400  isDead set to 1, DI unchanged.
-;           AX, BX, CX preserved.
-;
-; Arbitrary numbers explained:
-;   100, 200, 300, 400 - CX thresholds corresponding to cxMODE values 1-4
-;                        (each mode = 100 units); four stages of shrink before
-;                        the sprite is considered gone.
-; =============================================================================
-proc EnemyDisappearStep
-	push ax
-	push bx
-	push cx
-	
-	
-	call SetCXbyTime
-	
-	cmp cx, 100
-	jnle @@close
-	mov di, offset EnemyNormal
-	jmp @@ret
-@@close:
-	cmp cx, 200
-	jnle @@middle
-	mov di, offset EnemyClose
-	jmp @@ret
-@@middle:
-	cmp cx, 300
-	jnle @@far
-	mov di, offset EnemyMiddle
-	jmp @@ret
-@@far:
-	cmp cx, 400
-	jnle @@isDead
-	mov di, offset EnemyFar
-	jmp @@ret
-@@isDead:
-	mov [isDead], 1
-	jmp @@ret
-	
-	
-;	push cx
-;@@getRes:
-;	sub bx, 2
-;	sub ax, 8
-;	sub cl, 1
-;	cmp cl, 1
-;	jne @@getRes
-;	pop cx
-	
-;@@skip:
-;	push [disappearLevel]
-;	push offset EnemyNormal	
-
-;	add cl, '0'
-;	mov di, offset bmpDisappearEnemy
-;	mov [di+3], cl
-;	mov dx, offset bmpDisappearEnemy
-
-@@ret:
-	pop cx
-	pop bx
-	pop ax
-	ret
-endp EnemyDisappearStep
-
-; =============================================================================
-; PROC MoveEnemyToBoundry
-; -----------------------------------------------------------------------------
-; Purpose : Move every pixel in the given enemy sprite array one step toward
-;           a target (X, Y) screen position.  Uses a shift-register timer
-;           (EnemyStayAtPlaceTimer) to add a brief per-axis pause.
-;
-; Entry   : [bp+4]  = target Y screen coordinate.
-;           [bp+6]  = target X screen coordinate.
-;           [bp+8]  = DI - offset of the pixel-triplet array to move.
-;           [bp+10] = AX - initial step size (overridden by random if ax = 0).
-;           EnemyStayAtPlaceTimer - shift-register that gates movement.
-;
-; Exit    : Every pixel's X  Y in the array shifted one step toward target.
-;           isLeft  - set to 1 if moving left, 0 if moving right.
-;           isForawrd - set to 1 when X and Y both within ±10 of target.
-;
-;           All registers preserved.
-;
-; =============================================================================
-proc MoveEnemyToBoundry
-	push bp
-	mov bp, sp
-	push cx
-	push dx
-	push di
-	push ax
-	
-
-@@skip:
-	mov dx, [bp+4] ; y
-	mov cx, [bp+6] ; x
-	mov di, [bp+8] ; offset
-	mov ax, [bp+10] ; BUG - DOESNT ACTULLY WORK
-	
-	shl [EnemyStayAtPlaceTimer], 8
-	jnc @@checkX
-	mov [EnemyStayAtPlaceTimer], 1
-	
-@@checkY:
-	cmp [di+2], dx
-	je @@checkBoth
-	jl @@moreY
-@@lessY:
-	push di
-	push 2
-	push -1
-	call AddXToOffsetInArray
-	jmp @@checkX
-@@moreY:
-	push di
-	push 2
-	push 1
-	call AddXToOffsetInArray
-	jmp @@checkX
-@@checkBoth:
-	mov ax, cx
-	sub ax, [di]
-	cmp ax, -10
-	jl @@checkX
-	cmp ax, 10
-	jg @@checkX
-	jmp @@bothEqual
-@@checkX:
-	cmp ax, 0 
-	je @@randomize
-	jmp @@continue
-@@randomize:
-	mov bx, 2
-	mov dx, 3
-	call RandomByCsW
-	cmp [cxMODE],2
-	jng @@continue
-	mov ax, 1
-@@continue:
-	cmp [di], cx
-	je @@ret
-	jl @@moreX
-@@lessX:
-	push di
-	push 0
-	neg ax
-	push ax 
-	call AddXToOffsetInArray
-	mov [isLeft], 1
-	jmp @@ret
-@@moreX:
-	push di
-	push 0
-	push ax
-	call AddXToOffsetInArray
-;	add [enemy_x], ax ; WILL ONLY WORK WITH A TARGET WHERE:TARGET - START DIVIDES BY AX!
-	mov [isLeft], 0
-	jmp @@ret
-
-@@bothEqual:
-	mov [isForawrd], 1
-@@ret:
-	pop ax 
-	pop di
-	pop dx
-	pop cx
-	pop bp
-	ret 8
-endp MoveEnemyToBoundry
-
-; =============================================================================
-; PROC WaitToDisappear
-; -----------------------------------------------------------------------------
-; Purpose : Test whether Enemy 1's current position is within ±4 pixels of
-;           the designated disappear point (X, Y passed on the stack).
-;           If so, set DisappearNow and return carry set to signal the caller
-;           that the disappear sequence should begin.
-;
-; Entry   : [bp+4] = target Y (horizon-relative disappear Y).
-;           [bp+6] = target X (147 - the fixed screen disappear X).
-;           EnemyNormal[0] - current X of the sprite.
-;           EnemyNormal[2] - current Y of the sprite.
-;
-; Exit    : Carry set   = sprite is within ±4 pixels of target; DisappearNow = 1.
-;           Carry clear = sprite has not yet reached the target.
-;           AX, BX preserved.
-;
-; Arbitrary numbers explained:
-;   4  - tolerance in pixels; the enemy is considered "at" the disappear
-;        point when both |dx| ≤ 4 and |dy| ≤ 4, avoiding exact-match
-;        dependence when movement steps may overshoot by a pixel.
-; =============================================================================
-proc WaitToDisappear
-	push bp
-	mov bp, sp
-	push ax
-	push bx
-	
-	clc
-	
-	mov ax, [bp+6]
-	mov bx, [bp+4]
-	
-	mov di, offset EnemyNormal
-	
-	mov cx, [di]
-	sub cx, ax
-	cmp cx, -4
-	jl @@ret
-	cmp cx, 4
-	jg @@ret
-	
-	mov cx, [di+2]
-	sub cx, bx
-	cmp cx, -4
-	jl @@ret
-	cmp cx, 4
-	jg @@ret
-	
-;	cmp [di], ax
-;	jne @@ret
-;	cmp [di+2], bx
-;	jne @@ret
-	
-	mov [DisappearNow],1 
-	
-;	clc
-;	shl [EnemyStayAtPlaceTimer], 1
-;	jnc @@ret
-;	mov [EnemyStayAtPlaceTimer], 1
-	stc
-@@ret:
-	pop bx
-	pop ax
-	pop bp
-	ret 4
-endp WaitToDisappear
 
 ; =============================================================================
 ; PROC DrawAnything
@@ -8761,77 +8824,6 @@ proc DrawAnything
 @@ret:
 	ret
 endp DrawAnything
-
-; =============================================================================
-; PROC SpawnEnemyOnRandomCorner
-; -----------------------------------------------------------------------------
-; Purpose : Initialise Enemy's starting position for a new wave.
-;           Always places the sprite at Y = 140 (near the horizon).
-;           Randomly selects left-side (enemyLeft = 1, no X offset applied)
-;           or right-side (X += 269) spawn using a 0/1 random coin-flip.
-;
-; Entry   : EnemyNormal - must have been reset via resetVariabels before call.
-;
-; Exit    : EnemyNormal Y field incremented by 140 for every pixel.
-;           If right spawn: EnemyNormal X field incremented by 269 for every
-;           pixel, placing the sprite near the right edge of the screen.
-;           If left spawn:  enemyLeft = 1; X is left at its reset position
-;           (near the left edge).
-;           AX, BX, DX, CX preserved.
-;
-; =============================================================================
-proc SpawnEnemyOnRandomCorner
-	push ax
-	push bx
-	push dx
-	push cx
-	
-	push offset EnemyNormal
-	push 2
-	push 140
-	call AddXToOffsetInArray
-	
-	
-	mov bx, 0
-	mov dx, 1
-	call RandomByCsW
-	
-	cmp ax, 0
-	je @@isRight
-	mov [enemyLeft], 1
-	jmp @@ret
-
-	
-@@isRight:
-	mov ax, 269 
-@@intialize:
-	;mov [enemyBaseX], 269
-	;add [enemyBaseX], 250
-	push offset EnemyNormal
-	push 0
-	push ax 
-	call AddXToOffsetInArray
-	
-	;mov cx, 270
-	
-;@@spawnEnemy:
-;	mov dx, offset bmpEnemyForward
- ;   mov [FileNamePtr], dx
- ;	mov [enemy_y], 120
- ;	mov [bmpTop], 120
- ;	mov [BmpLeft], cx
- ;	mov [enemy_x], cx
- ;	mov [bmpWidth], 49
-;    mov [BmpHeight], 26
-	;call DrawAnything
-@@ret:
-	pop cx
-	pop dx
-	pop bx
-	pop ax
-	ret
-endp SpawnEnemyOnRandomCorner
-
 ; =============================================================================
 ; PROC AddXToOffsetInArray
 ; -----------------------------------------------------------------------------
@@ -9041,26 +9033,216 @@ endp make_mask_right
 ;           FileError      - set to 1 by OpenShowBmp if the BMP cannot be opened.
 ;
 ; =============================================================================
+; =============================================================================
+; PROC HandleAltitude
+; -----------------------------------------------------------------------------
+; Purpose : Per-frame altitude manager.
+;           1. Runs checkAltitude (warnings / crash logic).
+;           2. Draws the ALT indicator BMP strip at the bottom-left.
+;           3. Converts altitude (0-9999) into four decimal digits and
+;              renders them immediately right of the BMP strip.
+;
+; Entry   : altitude    - current altitude word (0-9999).
+;           horizonLine - used by checkAltitude.
+;           AltitudeBmp - filename of the ALT HUD strip BMP.
+;           secondBuffer - off-screen render target.
+;
+; Exit    : checkAltitude side-effects applied.
+;           ALT BMP rendered at (2, 180).
+;           Digits rendered at x = 51, 57, 63, 69  (y = 181).
+;           All registers preserved.
+;
+; Arbitrary numbers explained:
+;   47 / 7  - Width / height of the ALT BMP.
+;   2 / 180 - Screen position of the ALT BMP (bottom-left).
+;   51      - X start of digits: 2 (BmpLeft) + 47 (BmpWidth) + 2 gap.
+;   181     - Y of digit row, sits inside the 7-pixel HUD strip.
+;   6       - Horizontal step between digit columns.
+;   1000 / 100 / 10 - Successive divisors for thousands/hundreds/tens/units.
+; =============================================================================
 proc HandleAltitude
+    push ax
+    push bx
+    push cx
+    push dx
 
-	call checkAltitude
-@@DrawAltitude:
-	mov [BmpLeft], 2
-	mov [BmpTop], 180
-	mov dx, offset AltitudeBmp
-	mov [FileNamePtr], dx
-	mov [BmpWidth], 47 
-	mov [BmpHeight], 7
-	call OpenShowBmp
-	
-	
-	ret
+    call checkAltitude
+
+    ; --- Draw the ALT label BMP ---
+    mov [BmpLeft], 2
+    mov [BmpTop],  180
+    mov dx, offset AltitudeBmp
+    mov [FileNamePtr], dx
+    mov [BmpWidth],  47
+    mov [BmpHeight], 7
+    call OpenShowBmp
+
+    ; --- Extract four digits from altitude ---
+    mov ax, [altitude]
+
+    ; Clamp to 0-9999
+    cmp ax, 9999
+    jle @@clampHigh
+    mov ax, 9999
+@@clampHigh:
+    cmp ax, 0
+    jge @@clampLow
+    xor ax, ax
+@@clampLow:
+
+    ; --- Thousands digit ---
+    xor dx, dx
+    mov bx, 1000
+    div bx              ; AX = thousands digit, DX = remainder (0-999)
+    push dx             ; save remainder
+
+    push 181            ; screen Y
+    push 51             ; screen X
+    push ax             ; thousands digit
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Hundreds digit ---
+    pop  ax             ; remainder 0-999
+    xor  dx, dx
+    mov  bx, 100
+    div  bx             ; AX = hundreds digit, DX = remainder (0-99)
+    push dx             ; save remainder
+
+    push 181            ; screen Y
+    push 57             ; screen X (51 + 6)
+    push ax             ; hundreds digit
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Tens digit ---
+    pop  ax             ; remainder 0-99
+    xor  dx, dx
+    mov  bx, 10
+    div  bx             ; AX = tens digit, DX = units digit
+    push dx             ; save units
+
+    push 181            ; screen Y
+    push 63             ; screen X (57 + 6)
+    push ax             ; tens digit
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Units digit ---
+    pop  ax             ; units 0-9
+
+    push 181            ; screen Y
+    push 69             ; screen X (63 + 6)
+    push ax             ; units digit
+    call DrawDigitToOffscreenBuffer
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
 endp HandleAltitude
+
+
+; =============================================================================
+; PROC DrawDigitToOffscreenBuffer
+; -----------------------------------------------------------------------------
+; Purpose : Render a single decimal digit (0-9) onto secondBuffer at a
+;           caller-specified screen position using the pre-defined digit
+;           pixel-triplet sprites (DigitZero…DigitNine).
+;           Each sprite uses relative coordinates (0,0 origin); this proc
+;           adds the caller's (X,Y) offset before writing to the buffer.
+;
+; Entry   : [bp+4] = digit value (0-9).
+;           [bp+6] = screen X of the digit's top-left corner.
+;           [bp+8] = screen Y of the digit's top-left corner.
+;           DigitTable - word array of sprite offsets, indexed by digit value.
+;           secondBuffer - off-screen render target.
+;
+; Exit    : Digit pixels written to secondBuffer in color 255 (white).
+;           All registers preserved.
+;
+; Arbitrary numbers explained:
+;   255  - VGA palette index used for the digit color (white).
+;   2    - Byte size of each word in DigitTable (index * 2 = table offset).
+;   6    - Byte size of one pixel triplet (3 words); SI advances by 6 per entry.
+; =============================================================================
+proc DrawDigitToOffscreenBuffer
+    push bp
+    mov bp, sp
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    push di
+    push es
+
+    ; --- Resolve sprite pointer via DigitTable ---
+    mov ax, [bp+4]          ; digit value 0-9
+    cmp ax, 9               ; clamp to valid range
+    jg @@done
+    shl ax, 1               ; *2 -> word table index
+	push bx 
+	mov bx, ax 
+    mov si, [DigitTable + bx]   ; SI = offset of digit sprite array
+	pop bx
+
+    mov ax, seg secondBuffer
+    mov es, ax
+
+@@drawLoop:
+    ; --- Check for sentinel (0, 0, 0) ---
+    cmp [word ptr si],   0
+    jne @@ok
+    cmp [word ptr si+2], 0
+    jne @@ok
+    cmp [word ptr si+4], 0
+    je  @@done
+
+@@ok:
+    mov cx, [si]            ; sprite-relative X
+    mov dx, [si+2]          ; sprite-relative Y
+    add cx, [bp+6]          ; add screen X offset
+    add dx, [bp+8]          ; add screen Y offset
+
+    ; --- Bounds check ---
+    cmp cx, 0
+    jl  @@skip
+    cmp cx, 319
+    jg  @@skip
+    cmp dx, 0
+    jl  @@skip
+    cmp dx, 199
+    jg  @@skip
+
+    ; --- Compute flat buffer index: Y*320 + X ---
+    mov ax, dx
+    mov bx, 320
+    mul bx              ; DX:AX = Y * 320
+    add ax, cx          ; AX    = Y*320 + X
+    mov di, ax
+
+    mov al, 255         ; white
+    mov [es:di], al
+
+@@skip:
+    add si, 6
+    jmp @@drawLoop
+
+@@done:
+    pop es
+    pop di
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    pop bp
+    ret 6
+endp DrawDigitToOffscreenBuffer
 
 ; =============================================================================
 ; PROC checkAltitude
 ; -----------------------------------------------------------------------------
-; Purpose : Each frame, check whether the horizon line has moved so far up
+; Purpose : Each frame, check whether the altitude meter has moved so far up
 ;           or down that the player is at a dangerous altitude, and trigger
 ;           an audio warning accordingly.
 ;
@@ -9071,25 +9253,30 @@ endp HandleAltitude
 ;
 ; =============================================================================
 proc checkAltitude
-	cmp [horizonLine], 10
-	jg @@skip
-	call TerrainWarning
 
-@@skip:
-	cmp [horizonLine], 190
-	jl @@action
+	cmp [altitude], 20
+	jg @@checkTooHigh
 	call TerrainWarning
-
-@@action:
-	cmp [horizonLine], 190
-	jl @@actionLow
-	call HearAndSeeExplosion1
-	call GameOverProc
-@@actionLow:
-	cmp [horizonLine], 10
+	cmp [altitude], 0
 	jg @@ret
-	call HearAndSeeExplosion1
-	call GameOverProc
+	
+	call crash
+	jmp @@end 
+
+@@checkTooHigh:
+	cmp [altitude], 4500
+	jl @@end 
+@@warning:
+	call TerrainWarning
+	cmp [altitude], 5100
+	jle @@ret
+@@tooHigh:
+	call MoveDown
+	mov [PlaneState], 4 
+	jmp @@ret
+
+@@end:
+	mov [byte ptr musicOn], 1
 @@ret:
 	ret
 endp checkAltitude
@@ -9197,21 +9384,111 @@ endp flushKeys
 ;           FileError      - set to 1 by OpenShowBmp if the BMP cannot be opened.
 ;
 ; =============================================================================
+; =============================================================================
+; PROC HandleSpeed
+; -----------------------------------------------------------------------------
+; Purpose : Per-frame speed manager.
+;           1. Runs CheckSpeed (stall / key logic).
+;           2. Draws the SPD indicator BMP strip at the bottom-left.
+;           3. Converts planeSpeed (0-9999) into four decimal digits and
+;              renders them immediately right of the BMP strip.
+;
+; Entry   : planeSpeed  - current speed word (0-9999).
+;           SpeedBmp    - filename of the SPD HUD strip BMP.
+;           secondBuffer - off-screen render target.
+;
+; Exit    : CheckSpeed side-effects applied.
+;           SPD BMP rendered at (2, 189).
+;           Digits rendered at x = 49, 55, 61, 67  (y = 190).
+;           All registers preserved.
+;
+; Arbitrary numbers explained:
+;   45 / 7  - Width / height of the SPD BMP.
+;   2 / 189 - Screen position of the SPD BMP.
+;   49      - X start of digits: 2 + 45 + 2 gap.
+;   190     - Y of digit row, inside the 7-pixel HUD strip.
+;   6       - Horizontal step between digit columns.
+; =============================================================================
 proc HandleSpeed
-	
-	call CheckSpeed
+    push ax
+    push bx
+    push cx
+    push dx
+
+    call CheckSpeed
+
 @@DrawSpeed:
-	mov [BmpLeft], 2
-	mov [BmpTop], 189
-	mov dx, offset SpeedBmp
-	mov [FileNamePtr], dx
-	mov [BmpWidth], 45 
-	mov [BmpHeight], 7
-	call OpenShowBmp
+    mov [BmpLeft], 3
+    mov [BmpTop],  189
+    mov dx, offset SpeedBmp
+    mov [FileNamePtr], dx
+    mov [BmpWidth],  45
+    mov [BmpHeight], 7
+    call OpenShowBmp
 
-	ret
+    ; --- Extract four digits from planeSpeed ---
+    mov ax, [planeSpeed]
+	mov bx, 200
+	mul bx 
+    ; Clamp to 0-9999
+    cmp ax, 9999
+    jle @@clampHigh
+    mov ax, 9999
+@@clampHigh:
+    cmp ax, 0
+    jge @@clampLow
+    xor ax, ax
+@@clampLow:
+
+    ; --- Thousands digit ---
+    xor dx, dx
+    mov bx, 1000
+    div bx
+    push dx
+
+    push 190
+    push 51
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Hundreds digit ---
+    pop  ax
+    xor  dx, dx
+    mov  bx, 100
+    div  bx
+    push dx
+
+    push 190
+    push 57
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Tens digit ---
+    pop  ax
+    xor  dx, dx
+    mov  bx, 10
+    div  bx
+    push dx
+
+    push 190
+    push 63
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    ; --- Units digit ---
+    pop  ax
+
+    push 190
+    push 69
+    push ax
+    call DrawDigitToOffscreenBuffer
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
 endp HandleSpeed
-
 ; =============================================================================
 ; PROC CheckSpeed
 ; -----------------------------------------------------------------------------
@@ -9238,25 +9515,28 @@ proc CheckSpeed
 	
 	call stall
 	
-	cmp [byte ptr keys + 39h], 1
+	cmp [planeSpeed], 23
+	jnge @@NoOverspeedSoon	
+	call TerrainWarning
+@@NoOverspeedSoon:
+	cmp [planeSpeed], 25
+	jge @@checkSlowDown
+	cmp [byte ptr keys+39h], 1
 	jne @@checkSlowDown
-	cmp [planeSpeed], 40
-	jg @@ret
 	inc [planeSpeed]
 @@checkSlowDown:
 	; check left shift
+	cmp [planeSpeed], 1
+	jle @@ret
 	cmp [byte ptr keys + 2Ah], 1
 	jne @@checkRightShift
-	cmp [planeSpeed], 1
-	jle @@ret
 	dec [planeSpeed]
 @@checkRightShift:
-	cmp [byte ptr keys + 36h], 1
-	jne @@ret
 	cmp [planeSpeed], 1
 	jle @@ret
+	cmp [byte ptr keys + 36h], 1
+	jne @@ret
 	dec [planeSpeed]
-	
 @@ret:
 	pop ax
 	ret
@@ -9618,7 +9898,7 @@ proc PlaySong
 	push dx 
 	push si 
 	
-   mov dx, [bp+4]
+    mov dx, [bp+4]
     mov ax, 3D00h
     int 21h
     jc @@ret
@@ -9636,11 +9916,28 @@ proc PlaySong
     out dx, al
 
 @@main_loop:
+	cmp [byte ptr MainMenuNow], 1
+	je @@checkMainMenu
 	mov ah, 1
 	int 16h
 	jz @@continue 
 	stc
 	jmp @@ret
+@@checkMainMenu:
+    call checkMainMenu
+    jnc @@checkExit
+    ; '1' pressed — signal "start game": CF=0, ZF=1
+    clc
+    mov [byte ptr playGameAfter], 1
+    jmp @@ret
+@@CheckExit:
+    pushf
+    pop ax
+    test ax, 400h
+    jz @@continue
+    stc             ; '3' pressed — CF=1 = exit
+    jmp @@ret
+
 @@continue:
     ; --- Read next chunk ---
     mov bx, [file_handle]
@@ -9707,105 +10004,6 @@ proc PlaySong
 	ret 2
 endp PlaySong
 
-
-proc PlaySongAndMainMenu
-	push bp
-	mov bp, sp
-	
-   mov dx, [bp+4]
-    mov ax, 3D00h
-    int 21h
-    jc @@ret
-    mov [file_handle], ax
-
-    call reset_dsp
-
-    ; Speaker on
-    mov dx, DSP_WRITE
-@@spk_w:
-    in al, dx
-    test al, 80h
-    jnz @@spk_w
-    mov al, 0D1h
-    out dx, al
-
-@@main_loop:
-	call checkMainMenu
-	jnc @@checkExit 
-	clc 
-	jmp @@ret
-@@CheckExit:
-	pushf           ; Push the FLAGS register onto the stack
-	pop ax          ; Pop it into AX so we can manipulate it
-	test ax, 400h   ; Bit 9 is 400h (binary 0000 0100 0000 0000)
-	jz @@continue   ; Jump if DF = 1 (Decrement mode)
-; ... if DF = 0 (Increment mode), code continues here
-	stc 
-	jmp @@ret
-    ; --- Call CheckStartingMenu ---
- ;   call CheckStartingMenu
-;    jc @@main_done      ; carry set = quit music
-@@continue:
-    ; --- Read next chunk ---
-    mov bx, [file_handle]
-    mov dx, OFFSET chunk_buf
-    mov cx, CHUNK_SIZE
-    mov ah, 3Fh
-    int 21h
-    jc @@main_done
-    or ax, ax
-    jz @@main_done
-    mov [bytes_read], ax
-
-    ; --- Play chunk via direct DAC ---
-    mov si, OFFSET chunk_buf
-    mov cx, [bytes_read]
-@@sample_loop:
-    mov dx, DSP_WRITE
-@@dac_w1:
-    in al, dx
-    test al, 80h
-    jnz @@dac_w1
-    mov al, 10h
-    out dx, al
-@@dac_w2:
-    in al, dx
-    test al, 80h
-    jnz @@dac_w2
-    mov al, [si]
-    out dx, al
-    inc si
-
-    push cx
-    mov cx, SAMPLE_DELAY
-@@delay:
-    in al, 80h
-    loop @@delay
-    pop cx
-
-    loop @@sample_loop
-    jmp @@main_loop
-
-@@main_done:
-    mov bx, [file_handle]
-    mov ah, 3Eh
-    int 21h
-
-    ; Speaker off
-    mov dx, DSP_WRITE
-@@spkoff:
-    in al, dx
-    test al, 80h
-    jnz @@spkoff
-    mov al, 0D3h
-    out dx, al
-	
-	clc 
-@@ret:
-	pop bp
-	ret 2
-endp PlaySongAndMainMenu
-
 ; =============================================================================
 ; PROC file_open
 ; -----------------------------------------------------------------------------
@@ -9871,7 +10069,8 @@ proc DrawGrassLines
     push ax
     push bx
     push cx
-
+	
+    mov [BresenhamRandom], 1
     mov [byte ptr color], 6
 
     ; tree 2
@@ -9895,7 +10094,7 @@ proc DrawGrassLines
     call OverflowFix
     mov [word ptr x1], di
     mov [word ptr y1], si
-    call Bresenham_GetPointsRandom
+    call Bresenham_GetPoints
     call DrawPoints
 
 @@skipTree2:
@@ -9919,7 +10118,7 @@ proc DrawGrassLines
     call OverflowFix
     mov [word ptr x1], di
     mov [word ptr y1], si
-    call Bresenham_GetPointsRandom
+    call Bresenham_GetPoints
     call DrawPoints
 
 @@skipTree3:
@@ -9943,10 +10142,12 @@ proc DrawGrassLines
     call OverflowFix
     mov [word ptr x1], di
     mov [word ptr y1], si
-    call Bresenham_GetPointsRandom
+    call Bresenham_GetPoints
     call DrawPoints
 
 @@skipTree4:
+    mov [BresenhamRandom], 0
+
     pop cx
     pop bx
     pop ax
@@ -9972,7 +10173,7 @@ endp DrawGrassLines
 ; =============================================================================
 proc OverflowFix
 	
-	cmp di, 320
+	cmp di, 319
 	jnge @@nextCheck
 	mov di, 319
 	
@@ -10095,9 +10296,32 @@ proc DrawPlane
 	mov [BmpHeight], 45
 
 @@showFileImage:
-    mov [FileNamePtr], dx
+;	cmp [byte ptr shakePlayer], 1
+;	jne @@normalDraw
+	mov [BmpLeft], 115
+    mov [BmpTop], 88
+	
+;	mov bl, -1
+;	mov dl, 1
+;	call RandomByCsW
+;	push ax
+;	mov bl, 0
+;	mov dl, 1
+;	call RandomByCsW
+;	cmp ax, 1
+;	je @@left 
+;@@top:
+;	pop ax 
+;	add [BmpTop], ax
+
+;@;;;;@left:
+	;pop ax 
+	;add [bmpLeft], ax 
+@@normalDraw:
     mov [BmpLeft], 115
     mov [BmpTop], 88
+@@startDraw:
+    mov [FileNamePtr], dx
   ;  mov [BmpWidth], 100
    ; mov [BmpHeight], 30
     call OpenShowBmp
@@ -10130,11 +10354,17 @@ endp DrawPlane
 ;           Does not return to normal game flow.
 ; =============================================================================
 proc Crash
-
-	mov [GameOver], 1
 	
+	cmp [GameOver], 1
+	je @@gameOverCall
+	
+	mov [GameOver], 1
+	jmp @@ret
+	
+@@gameOverCall:
 	call GameOverProc
 	
+@@ret:
 	ret
 endp Crash
 
@@ -10147,6 +10377,8 @@ endp Crash
 ;           3. Show and play the explosion at screen centre.
 ;           4. Display the G_O.bmp (Game Over) full-screen image.
 ;           5. Wait until the player presses any key to continue.
+;			6. Show Score.
+;			7. Wait for press to exit.
 ;
 ; Entry   : None.
 ;
@@ -10157,35 +10389,106 @@ endp Crash
 ;
 ; =============================================================================
 proc GameOverProc
-	push dx
-	
-	call SpeakerOff
-	
-	mov [GameOver], 1
-	
+    push dx
+    
+    call SpeakerOff
+    mov [GameOver], 1
+    
+    ; 1) Show explosion
+    push 120
+    push 80
+    call HearAndSeeExplosion1
+    
+    call flushKeys
 
-	push 120
-	push 80
-	call HearAndSeeExplosion1
+    mov [BmpWidth], 320
+    mov [BmpHeight], 200
+    mov [BmpTop], 0
+    mov [BmpLeft], 0
+    mov dx, offset FileGameOverBmp
+    mov [fileNamePtr], dx
+    call OpenShowBmp
+    call TransitionBuffer
 
-	mov dx, offset FileGameOverBmp
-	mov [FileNamePtr], dx
-	mov [BmpLeft], 0
-	mov [BmpTop], 0
-	mov [BmpWidth], 320
-	mov [BmpHeight], 200
-	call OpenShowBmp
-	call TransitionBuffer
-	call flushKeys
+@@checkGameOver:
+    call AnyKeyPressedCheck 
+    cmp [anyKeyPressed], 1
+    jne @@checkGameOver
+
+	; 2) Compare Score vs HighScore
+    mov ax, [Score]
+    cmp ax, [HighScore]
+    ja @@Beaten      ; USE ja (Jump Above - Unsigned)
+    jb @@NotBeaten   ; USE jb (Jump Below - Unsigned)
+
+    ; If high words are equal, check low words
+    mov ax, [Score+2]
+    cmp ax, [HighScore+2]
+    ja @@Beaten      ; USE ja (Jump Above - Unsigned)
+    jmp @@NotBeaten  ; If equal or less, score was not beaten
+
+@@Beaten:
+    ; --- Legitimate New High Score! ---
+    ; (The explicit check for HighScore == 0 was removed so the 
+    ; first game > 0 triggers the success screen)
+    mov ax, [Score]
+    mov [HighScore], ax
+    mov ax, [Score+2]
+    mov [HighScore+2], ax
+    call SaveHighScore
+
+    ; Load "newHs.bmp" to buffer
+    mov dx, offset FileNewHsBmp
+    mov [FileNamePtr], dx
+    mov [BmpLeft], 0
+    mov [BmpTop], 0
+    mov [BmpWidth], 320
+    mov [BmpHeight], 200
+    call OpenShowBmp
+
+    ; Draw the New High Score over the celebration screen
+    push offset HighScore
+    push 60 ; X coordinate
+    push 173  ; Y coordinate
+    call DrawScoreAt
+
+    jmp @@FinishScreen
+
+@@NotBeaten:
+    ; --- Score NOT Beaten (or points lost / 0 points on first game) ---
+    ; Load "noHs.bmp" to buffer
+    mov dx, offset FileNoHsBmp
+    mov [FileNamePtr], dx
+    mov [BmpLeft], 0
+    mov [BmpTop], 0
+    mov [BmpWidth], 320
+    mov [BmpHeight], 200
+    call OpenShowBmp
+
+    ; Draw Current Score
+    push offset Score
+    push 43  ; X coordinate
+    push 160  ; Y coordinate
+    call DrawScoreAt
+
+    ; Draw High Score underneath
+    push offset HighScore
+    push 74 ; X coordinate
+    push 173  ; Y coordinate
+    call DrawScoreAt
+
+@@FinishScreen:
+    ; Commit the off-screen buffer to VGA memory
+    call TransitionBuffer
+    call flushKeys
 
 @@checkLoop:
-	call AnyKeyPressedCheck 
-	cmp [anyKeyPressed], 1
-	jne @@checkLoop
-	
-	
-	pop dx
-	ret
+    call AnyKeyPressedCheck 
+    cmp [anyKeyPressed], 1
+    jne @@checkLoop
+
+    pop dx
+    ret
 endp GameOverProc
 
 ; =============================================================================
@@ -10249,7 +10552,7 @@ proc HearAndSeeExplosion1
 endp HearAndSeeExplosion1
 
 ; =============================================================================
-; PROC TerrainWarning ; TO FIX - BAD! BLOCKS GAME!
+; PROC TerrainWarning 
 ; -----------------------------------------------------------------------------
 ; Purpose : Emit a repeating low-high two-tone beep via the PC Speaker to
 ;           warn the player that they are approaching the terrain altitude
@@ -10265,58 +10568,14 @@ proc TerrainWarning
     push ax
     push cx
     push dx
-
-    ; how many times to beep - more urgent = more reps
-    mov cx, 3
-
-@@bepLoop:
-    push cx
-
-    ; LOW tone - 280Hz
-    mov ax, 280
-    call SpeakerOn
-    mov cx, 800
-@@low1:
-    push cx
-    mov cx, 800
-@@low2: loop @@low2
-    pop cx
-    loop @@low1
-
-    ; SHORT silence
-    call SpeakerOff
-    mov cx, 100
-@@sil1:
-    push cx
-    mov cx, 400
-@@sil2: loop @@sil2
-    pop cx
-    loop @@sil1
-
-    ; HIGH tone - 880Hz
-    mov ax, 880
-    call SpeakerOn
-    mov cx, 400
-@@hi1:
-    push cx
-    mov cx, 800
-@@hi2: loop @@hi2
-    pop cx
-    loop @@hi1
-
-    call SpeakerOff
-
-    ; pause between repeats
-    mov cx, 300
-@@pause1:
-    push cx
-    mov cx, 800
-@@pause2: loop @@pause2
-    pop cx
-    loop @@pause1
-
-    pop cx
-    loop @@bepLoop
+	
+	mov [byte ptr musicOn], 0
+	
+	mov ax, [warningBeepSound]
+	xor ax, 1000
+	mov [warningBeepSound], ax
+	call SpeakerOn
+	
 
     pop dx
     pop cx
@@ -10325,7 +10584,7 @@ proc TerrainWarning
 endp TerrainWarning
 
 ; =============================================================================
-; PROC Stall ; TO FIX! - BAD!
+; PROC Stall 
 ; -----------------------------------------------------------------------------
 ; Purpose : Simulate an aerodynamic stall when planeSpeed drops to 1.
 ;           Forces the aircraft into a nose-down attitude, lowers the horizon
@@ -10352,24 +10611,13 @@ proc Stall
 	cmp [planeSpeed], 1
 	jg @@ret
 	
-	call MoveDown
-	sub [horizonLine], 8
-	cmp [horizonLine],10
-	jge @@playSfx
-	mov [horizonLine], 10
-	sub [altitude], 7
-@@playSfx:
-	push offset FileStallSfx
-	call PlaySong
+	call TerrainWarning
 	
+	call MoveDown
 	call MoveDown
 		
 	mov [PlaneState], 4 ; down
 	
-	cmp [horizonLine], 10
-	jge @@ret
-	mov [GameOver], 1
-	call GameOverProc
 
 @@ret:
 	ret
@@ -10396,13 +10644,9 @@ endp Stall
 ;
 ; =============================================================================
 proc MoveUp
-	push ax
-	cmp [altitude], 0
-	jg @@continue
-	call Crash
-	jmp @@EnemeyY
-@@continue:
-	inc [altitude]
+
+	add [altitude], 37
+	
 	inc [horizonLine]
 @@EnemeyY:
 	push offset EnemyNormal
@@ -10415,7 +10659,6 @@ proc MoveUp
 	push 1
 	call AddXToOffsetInArray
 @@ret:
-	pop ax
 	ret
 endp MoveUp
 
@@ -10479,38 +10722,10 @@ endp CheckAndMoveNew
 ;           If altitude was 0: Crash is called.
 ;
 ; =============================================================================
-; PROC MoveForwards
-; -----------------------------------------------------------------------------
-; Purpose : Each frame, advance all four landscape Z-depth values by a
-;           speed-dependent step so that ground objects appear to rush toward
-;           the player.  Objects that pass too close (Z < 245) are
-;           teleported to a far distance via KillObject to create an
-;           infinite-looping landscape.
-;
-; Entry   : planeSpeed - current forward speed (1-40).
-;           tree1_z / tree2_z / tree3_z / tree4_z - world Z depths of the
-;           four ground-line anchor points.
-;
-; Exit    : Each tree Z decremented by (planeSpeed * 1 * 4).
-;           Trees whose Z crossed 245 are reset to a far position via
-;           KillObject.
-;           AX, BX modified during calculation (not preserved - caller aware).
-;
-; Arbitrary numbers explained:
-;   4    - SHL AX, 2 = multiply by 4: scales the speed for perceptible
-;          landscape motion even at speed 1.
-;   245  - Minimum Z threshold before an object is considered "passed";
-;          objects closer than this are reset so the loop appears infinite.
-; =============================================================================
-; =============================================================================
 proc MoveDown
-
-	cmp [altitude], 0
-	jg @@continue
-	call Crash
-	jmp @@EnemyY
+	
 @@continue:
-	dec [altitude]
+	sub [altitude], 37
 	dec [horizonLine]
 @@EnemyY:
 	push offset EnemyNormal
@@ -10807,11 +11022,7 @@ proc fillAround
 	mov ax, [horizonLine]
 	mov dx, 320
 	mul dx
-	
-	push 0
-	push 9
-	push ax
-	call FillWorld
+	 
 	
 	mov dx, 64000
 	sub dx, ax
@@ -10823,7 +11034,26 @@ proc fillAround
 	pop dx
 	pop bx
 	pop ax
+	ret
 endp fillAround
+
+proc FillSky
+	push ax 
+	push dx 
+	
+	mov ax, [horizonLine]
+	mov dx, 320
+	mul dx
+	
+	push 0
+	push 9
+	push ax
+	call FillWorld
+	
+	pop ax 
+	pop dx
+	ret
+endp FillSky
 
 
 ; =============================================================================
@@ -10957,6 +11187,7 @@ proc FillWorld
 	push ax
 	push es
 	push di
+	push cx 
 	
 	mov ax, seg secondBuffer
 	mov es, ax
@@ -10967,6 +11198,7 @@ proc FillWorld
 	mov cx, [bp+4]
 	rep stosb
 	
+	pop cx 
 	pop di
 	pop es
 	pop ax
@@ -10974,138 +11206,22 @@ proc FillWorld
 	ret 6
 endp FillWorld
 
-proc Bresenham_GetPointsRandom
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    push di
-    ; reset counter
-    mov [pointsCount], 0
-    ; dx = abs(x1 - x0)
-    mov ax, [x1]
-    sub ax, [x0]
-    jns @@dx_ok
-    neg ax
-@@dx_ok:
-    mov si, ax        ; dx
-    ; dy = -abs(y1 - y0)
-    mov ax, [y1]
-    sub ax, [y0]
-    jns @@dy_ok
-    neg ax
-@@dy_ok:
-    neg ax
-    mov di, ax        ; dy (negative)
-    ; stepX
-    mov ax, [x0]
-    cmp ax, [x1]
-    jle @@sx_pos
-    mov bx, -1
-    jmp @@sx_done
-@@sx_pos:
-    mov bx, 1
-@@sx_done:
-    mov [stepX], bx
-    ; stepY
-    mov ax, [y0]
-    cmp ax, [y1]
-    jle @@sy_pos
-    mov bx, -1
-    jmp @@sy_done
-@@sy_pos:
-    mov bx, 1
-@@sy_done:
-    mov [stepY], bx
-    ; error = dx + dy
-    mov ax, si
-    add ax, di
-    mov cx, ax        ; error
-@@loop:
-    ; calculate address = y*320 + x
-    mov ax, [y0]
-    mov bx, 320
-    mul bx
-    add ax, [x0]
-    ; store address
-    mov bx, [pointsCount]
-    shl bx, 1
-    mov [points + bx], ax
-    inc [pointsCount]
-
-    ; --- random y offset ---
-    push cx             ; save error (random may clobber cx)
-    push si             ; save dx
-    push di             ; save dy
-	push bx 
-	push dx 
-	mov bx, 1
-	mov dx, 2
-    call RandomByCsW         ; returns 1 or 2 in ax
-	pop dx 
-	pop bx
-    pop di
-    pop si
-    pop cx
-    cmp ax, 1
-    jne @@no_offset     ; if random != 1, skip
-    mov bx, [pointsCount]
-    dec bx              ; point to the point we just stored
-    shl bx, 1
-    sub [word points + bx], 320  ; subtract 320 = move y up by 1
-@@no_offset:
-
-    ; stop condition
-    mov ax, [x0]
-    cmp ax, [x1]
-    jne @@cont
-    mov ax, [y0]
-    cmp ax, [y1]
-    je @@end
-@@cont:
-    ; e2 = 2*error
-    mov ax, cx
-    shl ax, 1
-    ; if e2 >= dy
-    cmp ax, di
-    jl @@skipX
-    add cx, di
-    mov bx, [stepX]
-    add [x0], bx
-@@skipX:
-    ; if e2 <= dx
-    cmp ax, si
-    jg @@skipY
-    add cx, si
-    mov bx, [stepY]
-    add [y0], bx
-@@skipY:
-    jmp @@loop
-@@end:
-    pop di
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-endp Bresenham_GetPointsRandom
-
 ; =============================================================================
 ; PROC Bresenham_GetPoints
 ; -----------------------------------------------------------------------------
 ; Purpose : Implements the Bresenham line algorithm to calculate all pixel
 ;           addresses along a line between (x0, y0) and (x1, y1). The offsets
 ;           are calculated for a 320x200 screen and stored in an array.
+;           When BresenhamRandom = 1, each stored pixel also has a 50% chance
+;           of being shifted one row upward (Y-1), creating a wavy grass effect.
 ;
-; Entry   : x0, y0 - Starting coordinates.
-;           x1, y1 - Ending coordinates.
+; Entry   : x0, y0          - Starting coordinates.
+;           x1, y1          - Ending coordinates.
+;           BresenhamRandom - 0 = plain line, 1 = random Y offset per pixel.
 ;
 ; Exit    : points      - Array filled with memory offsets (y*320 + x).
 ;           pointsCount - Number of points calculated and stored.
 ;           AX, BX, CX, DX, SI, DI preserved.
-;
 ; =============================================================================
 proc Bresenham_GetPoints
     push ax
@@ -11115,7 +11231,6 @@ proc Bresenham_GetPoints
     push si
     push di
 
-    ; reset counter
     mov [pointsCount], 0
 
     ; dx = abs(x1 - x0)
@@ -11124,7 +11239,7 @@ proc Bresenham_GetPoints
     jns @@dx_ok
     neg ax
 @@dx_ok:
-    mov si, ax        ; dx
+    mov si, ax
 
     ; dy = -abs(y1 - y0)
     mov ax, [y1]
@@ -11133,7 +11248,7 @@ proc Bresenham_GetPoints
     neg ax
 @@dy_ok:
     neg ax
-    mov di, ax        ; dy (negative)
+    mov di, ax
 
     ; stepX
     mov ax, [x0]
@@ -11160,21 +11275,46 @@ proc Bresenham_GetPoints
     ; error = dx + dy
     mov ax, si
     add ax, di
-    mov cx, ax        ; error
+    mov cx, ax
 
 @@loop:
-    ; calculate address = y*320 + x
+    ; address = y*320 + x
     mov ax, [y0]
     mov bx, 320
     mul bx
     add ax, [x0]
 
-    ; store address
     mov bx, [pointsCount]
     shl bx, 1
     mov [points + bx], ax
     inc [pointsCount]
 
+    ; --- optional random Y offset ---
+    cmp [BresenhamRandom], 1
+    jne @@skip_random
+
+    push cx
+    push si
+    push di
+    push bx
+    push dx
+    mov bx, 1
+    mov dx, 2
+    call RandomByCsW        ; AX = 1 or 2
+    pop dx
+    pop bx
+    pop di
+    pop si
+    pop cx
+
+    cmp ax, 1
+    jne @@skip_random
+    mov bx, [pointsCount]
+    dec bx
+    shl bx, 1
+    sub [word points + bx], 320   ; shift pixel up by one row
+
+@@skip_random:
     ; stop condition
     mov ax, [x0]
     cmp ax, [x1]
@@ -11184,25 +11324,20 @@ proc Bresenham_GetPoints
     je @@end
 
 @@cont:
-    ; e2 = 2*error
     mov ax, cx
     shl ax, 1
 
-    ; if e2 >= dy
     cmp ax, di
     jl @@skipX
     add cx, di
     mov bx, [stepX]
     add [x0], bx
-
 @@skipX:
-    ; if e2 <= dx
     cmp ax, si
     jg @@skipY
     add cx, si
     mov bx, [stepY]
     add [y0], bx
-
 @@skipY:
     jmp @@loop
 
@@ -11538,8 +11673,11 @@ endp CopyBmpPalette
 	mov si,offset ScrLine
 @@copyLoop:
 	mov al, [si]
-	cmp al, 183            
+	cmp [byte ptr shouldCheckSkip], 1
+	jne @@simplyWrite
+	cmp al, 183      	
 	je @@skipPixel
+@@simplyWrite:
 	mov [es:di], al
 @@skipPixel:
 	inc si
@@ -11556,7 +11694,7 @@ endp CopyBmpPalette
 endp ShowBMP
  
 ; =============================================================================
-; PROC ShowBMP
+; PROC ShowAxDecimal
 ; -----------------------------------------------------------------------------
 ; Purpose : Write on screen the value of ax (decimal)
 ;               the practice :  
