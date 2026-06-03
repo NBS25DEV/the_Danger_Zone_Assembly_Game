@@ -1,1 +1,0 @@
-STL.raw was not reported as it should not make the final cut.
